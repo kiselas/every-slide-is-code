@@ -1,0 +1,68 @@
+/*! deck-kit runtime styles · MIT. Mechanics only: the look of a deck lives in its own <style>. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-letterbox, #000); }
+.deck { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; contain: layout paint; }
+.dk-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.dk-layer { position: absolute; inset: 0; display: none; z-index: 0; backface-visibility: hidden; }
+.dk-layer.is-on { display: block; }
+.slide { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; display: none; }
+.dk-layer.is-on > .slide { display: block; }
+.slide > .notes { display: none !important; }
+.slide [data-anim], .slide [data-step], .slide [data-stagger] > * { transform-box: fill-box; transform-origin: center; }
+.slide [data-anim="count"] { font-variant-numeric: tabular-nums; }
+.dk-mask-i { display: inline-block; will-change: transform; }
+.dk-caret::after { content: ''; display: inline-block; width: .07em; height: .95em; margin-left: .05em; vertical-align: -.1em; background: currentColor; }
+.dk-highlight { background-image: linear-gradient(transparent 56%, var(--dk-mark, #ffe066) 56%, var(--dk-mark, #ffe066) 90%, transparent 90%);
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.dk-strike { background-image: linear-gradient(transparent 50%, var(--dk-strike, currentColor) 50%, var(--dk-strike, currentColor) calc(50% + .08em), transparent calc(50% + .08em));
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+.dk-morph { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.dk-morph > * { will-change: transform, opacity; }
+.dk-veil { position: absolute; inset: 0; z-index: 50; pointer-events: none; opacity: 0; }
+.dk-blackout { position: absolute; inset: 0; z-index: 90; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; }
+.dk-blackout.is-on { opacity: 1; }
+.dk-progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 6px; z-index: 60; transform-origin: 0 50%;
+  background: var(--dk-progress, currentColor); opacity: .5; transform: scaleX(0); }
+.dk-number { position: absolute; right: 56px; bottom: 36px; z-index: 60; font: 500 20px/1 var(--dk-number-font, ui-monospace, monospace);
+  color: var(--dk-number, currentColor); opacity: .55; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.dk-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.dk-mode-live.dk-idle, .dk-mode-live.dk-idle * { cursor: none !important; }
+.dk-mode-render *, .dk-mode-embed * { cursor: none !important; }
+
+/* overview */
+.dk-overview .deck { background: var(--dk-overview-bg, #1b1b1b) !important; }
+.dk-overview .dk-stage, .dk-overview .dk-progress, .dk-overview .dk-number { display: none; }
+.dk-overview .dk-layer { cursor: pointer; outline: 2px solid rgba(255,255,255,.08); }
+.dk-overview .dk-layer.dk-ov-sel { outline: 14px solid var(--dk-ov-accent, #ffd23f); z-index: 2; }
+
+/* help */
+.dk-help { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(0,0,0,.55);
+  font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; color: #111; }
+.dk-help.is-on { display: grid; }
+.dk-help > div { background: #fff; padding: 22px 28px; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.dk-help td { padding: 3px 16px 3px 0; } .dk-help td:first-child { font-family: ui-monospace, monospace; color: #666; }
+
+/* presenter view */
+body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
+.dk-presenter .deck { display: none; }
+.dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.dk-pv header { display: flex; gap: 28px; align-items: baseline; padding: 14px 22px; border-bottom: 1px solid #2a2a2a; }
+.dk-pv-timer { font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dk-pv-pos { flex: 1; color: #aaa; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
+.dk-pv main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding: 22px; min-height: 0; }
+.dk-pv aside { display: grid; grid-template-rows: auto 1fr; gap: 18px; min-height: 0; }
+.dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+.dk-pv-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+.dk-pv-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.dk-pv-notes { overflow: auto; font-size: 24px; line-height: 1.45; color: #f2f2f2; padding-right: 8px; }
+.dk-pv-notes p { margin: 0 0 .7em; } .dk-pv-notes em { color: #777; }
+
+/* print (vector PDF export) */
+.dk-printing, .dk-printing body { height: auto; overflow: visible; background: #fff; }
+.dk-printing .deck:not(.dk-print), .dk-printing .dk-help { display: none !important; }
+.deck.dk-print { position: static; transform: none; width: auto; height: auto; overflow: visible; contain: none; background: none; }
+.dk-page { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+.dk-page:last-child { break-after: auto; page-break-after: auto; }
+.dk-page > .dk-page-stage { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dk-page > .dk-layer { display: block; }
+@media print { html, body { overflow: visible !important; height: auto !important; } }
