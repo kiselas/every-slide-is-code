@@ -9,7 +9,7 @@ in one HTML file, with a presenter view and PDF / PPTX exports.
 <img src="examples/demo/teaser.gif" width="720" alt="Teaser of the demo deck: a scale read-out tares to zero, the camera feeds down a receipt, bars and lines build, the receipt is torn off, a device morphs into a diagram, a zoom dives into a printed prep ticket">
 
 <sub>No templates, no images: the whole deck is one HTML file that computes every frame.<br>
-Source: <a href="examples/demo/deck.html">examples/demo/deck.html</a> · storyline: <a href="examples/demo/SCRIPT.md">examples/demo/SCRIPT.md</a></sub>
+<b><a href="https://kiselas.github.io/every-slide-is-code/">▶ Open it live in your browser</a></b> · source: <a href="examples/demo/deck.html">examples/demo/deck.html</a> · storyline: <a href="examples/demo/SCRIPT.md">examples/demo/SCRIPT.md</a></sub>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
 [![Agent Skill: Claude · Codex · ChatGPT](https://img.shields.io/badge/Agent_Skill-Claude_·_Codex_·_ChatGPT-d97757)](SKILL.md)
@@ -53,7 +53,7 @@ Tare is a seed pitch for a fictional product, a scale that weighs kitchen food w
 
 Transitions carry meaning: the **camera** feeds down the receipt inside a chapter, the receipt is **torn off** between chapters, the device **morphs** into a diagram node, and a **zoom** dives from that node into the printed ticket.
 
-See it live: open [`examples/demo/deck.html`](examples/demo/deck.html) in Chrome. Click or press → to advance; move the mouse for the control bar (slide title, step dots, a scrubber to jump anywhere); **O** or **Esc** for all slides, **P** for presenter view, **?** for shortcuts.
+See it live at [kiselas.github.io/every-slide-is-code](https://kiselas.github.io/every-slide-is-code/) (the starter deck is at [/template.html](https://kiselas.github.io/every-slide-is-code/template.html)), or open [`examples/demo/deck.html`](examples/demo/deck.html) locally in Chrome. Click or press → to advance; move the mouse for the control bar (slide title, step dots, a scrubber to jump anywhere); **O** or **Esc** for all slides, **P** for presenter view, **?** for shortcuts.
 
 ## Quick start
 
