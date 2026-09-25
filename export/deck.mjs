@@ -213,7 +213,9 @@ try {
           await page.evaluate(T => window.__draw(T), g.t0 + dt);
           for (const x of await page.evaluate(lint)) {
             if (!/escapes-box|off-canvas|overflow/.test(x.kind)) continue;
-            const k = `${g.i}|${x.kind}|${x.msg.replace(/^"[^"]*"/, '')}`;   // one line per element, not per value if (seen.has(k)) continue; seen.add(k); errs++;
+            // one line per element, not one per value it passes through
+            const k = `${g.i}|${x.kind}|${x.msg.replace(/^"[^"]*"/, '')}`;
+            if (seen.has(k)) continue; seen.add(k); errs++;
             console.log(`ERR   ${`${g.i + 1}.${g.step}`.padEnd(5)} ${meta.deck[g.i].id}  ${x.kind} (while animating, +${(dt + (g.entry || 0)).toFixed(1)}s): ${x.msg}`);
           }
         }
