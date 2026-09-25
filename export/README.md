@@ -22,7 +22,8 @@ node deck.mjs sheet  deck.html [sheet.png]   # contact sheet of all rest frames;
 node deck.mjs strip  deck.html [strip.png]   # one transition: --slide N --frames 8
 node deck.mjs gif    deck.html [out.gif]     # video timeline; --from --to --fps 12 --width 960 --hold 1.2
 node deck.mjs mp4    deck.html [out.mp4]     # video timeline via ffmpeg; --fps 30 --hold
-node deck.mjs check  deck.html               # lint; exit code 1 on errors
+node deck.mjs check  deck.html               # lint; exit code 1 on errors; --timeline, --no-webfonts
+node deck.mjs perf   deck.html               # frame cost per step and transition; exit code 1 over 16 ms
 node deck.mjs bundle deck.html [out.html]    # inline fonts, CDN scripts, remote images
 ```
 

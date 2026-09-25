@@ -25,7 +25,8 @@ deck-kit is a set of rules and recipes that closes those gaps, plus a small runt
 
 - **one source, every format.** The HTML deck animates; its rest frames become a vector PDF and a PPTX with speaker notes; its timeline becomes a GIF or MP4;
 - **exact jumps.** `#7.2`, the overview, presenter view and the clicker land on a precise state with no replay;
-- **checks a machine can run.** Every rest frame is linted for tiny text, overlaps, overflow and the safe area, and laid out on a contact sheet for review;
+- **checks a machine can run.** Every rest frame, and every moment of every animation, is linted for text escaping its box, tiny text, overlaps and the safe area, with and without webfonts, and laid out on a contact sheet for review;
+- **cheap to run.** A slide that has finished animating stops rendering; a still slide costs almost nothing, even on battery;
 - **edits in one line.** Change an easing, a colour or a number, re-export, and get the same deck with one difference.
 
 ## What the demo shows
@@ -52,7 +53,7 @@ Tare is a seed pitch for a fictional product, a scale that weighs kitchen food w
 
 Transitions carry meaning: the **camera** feeds down the receipt inside a chapter, the receipt is **torn off** between chapters, the device **morphs** into a diagram node, and a **zoom** dives from that node into the printed ticket.
 
-See it live: open [`examples/demo/deck.html`](examples/demo/deck.html) in Chrome. Arrows or click to advance, **O** for the overview, **P** for presenter view.
+See it live: open [`examples/demo/deck.html`](examples/demo/deck.html) in Chrome. Click or press → to advance; move the mouse for the control bar (slide title, step dots, a scrubber to jump anywhere); **O** or **Esc** for all slides, **P** for presenter view, **?** for shortcuts.
 
 ## Quick start
 
@@ -90,6 +91,8 @@ In a plain chat, attach `00-agent-brief.md`, `01-runtime.md` and `template/deck.
 ```bash
 cd export && npm install
 node deck.mjs check ../my-deck.html                 # lint every rest frame
+node deck.mjs check ../my-deck.html --timeline --no-webfonts   # mid-animation, fallback fonts
+node deck.mjs perf  ../my-deck.html                 # frame cost per slide and transition
 node deck.mjs sheet ../my-deck.html sheet.png       # contact sheet for review
 node deck.mjs pdf   ../my-deck.html deck.pdf        # vector, selectable text
 node deck.mjs pptx  ../my-deck.html deck.pptx       # static slides + speaker notes
@@ -116,6 +119,7 @@ Needs Node 18+ and Google Chrome; MP4 also needs ffmpeg. PDF and PPTX are delibe
 | [10-stage.md](10-stage.md) | A world behind the slides: grain, parallax, marks between slides |
 | [11-presenting.md](11-presenting.md) | Keys, presenter view, the room, what to send |
 | [12-export-qa.md](12-export-qa.md) | Formats, check, contact sheet, transition strips, checklist |
+| [13-performance.md](13-performance.md) | What the runtime optimises, rules for deck code, measuring |
 | [runtime/](runtime/) | `deck.js` and `deck.css`, inlined into every deck |
 | [template/deck.html](template/deck.html) | Starter deck: builds, count, bars, line, flow, morph |
 | [export/](export/) | Exporter and linter (Node + Playwright) |

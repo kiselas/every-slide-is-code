@@ -29,7 +29,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           node deck.mjs check ../template/deck.html
-          node deck.mjs check ../examples/demo/deck.html
+          node deck.mjs check ../examples/demo/deck.html --timeline
       - run: bash scripts/pack-skill.sh deck-kit.zip
       - name: Attach to release
         run: |

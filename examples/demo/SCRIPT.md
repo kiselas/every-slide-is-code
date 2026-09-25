@@ -86,3 +86,6 @@ node deck.mjs gif   ../examples/demo/deck.html teaser.gif --hold 1.1 --to 34.4 -
 - Every large SVG number rendered at 26 px, because `.art text { font-size }` beat the `font-size` attribute. That is why `Deck.svg()` writes presentation values to inline style.
 - The grid of slide 2 flew in from the corner of the SVG: the squares needed `transform-box: fill-box`.
 - The stage canvas was stuck at its default 300×150 and stretched: fixed in the runtime, found on the transition strip.
+- The scale read-out fit at rest, but while it settled after taring, "−0.825" stuck 29 px out of its frame. Found by `check --timeline`; the read-out is now sized for "−0.000 kg".
+- With Google Fonts blocked, "printed at 6 a.m." spilled out of a node with a fixed height. Found by `check --no-webfonts`; nodes now have a minimum height and titles `data-fit="2"`.
+- The ticket's `feed` animation read `offsetHeight` every frame; it now measures once in `init`.

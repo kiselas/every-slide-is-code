@@ -15,7 +15,8 @@ description: Presentation decks as code — pitch decks, product launches, idea 
    - flows, architecture, timelines, matrices: `08-diagrams.md`;
    - titles, big numbers, text treatment: `09-typography.md`;
    - a background world that lives behind all slides: `10-stage.md`;
-   - rehearsal, presenter view, the room: `11-presenting.md`.
+   - rehearsal, presenter view, the room: `11-presenting.md`;
+   - smoothness, battery, heavy slides: `13-performance.md`.
 3. Start every deck from `template/deck.html` (`node scripts/sync-runtime.mjs --new my-deck.html`), or copy the template and paste `runtime/deck.css` and `runtime/deck.js` into its two marked slots.
 4. Show the plan as data first: the storyline (one sentence per slide), the style, and which slides carry a chart, a diagram or a transition with a meaning. Then write code.
-5. After every version run `node export/deck.mjs check` and `node export/deck.mjs sheet`, look at the sheet yourself and fix by slide and step number (`4.1`, not "the chart slide").
+5. After every version run `node export/deck.mjs check` and `node export/deck.mjs sheet`, look at the sheet yourself and fix by slide and step number (`4.1`, not "the chart slide"). Before handing over, also run `check --timeline`, `check --no-webfonts` and `perf`.

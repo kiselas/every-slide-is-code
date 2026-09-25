@@ -33,11 +33,30 @@ node deck.mjs check deck.html
 | `safe-area` | text within 38 px of an edge (skip with `data-bleed`) |
 | `overlap` | two text boxes overlap (glyph bands, not font boxes) |
 | `overflow` | a box with `overflow: hidden` clips its content |
+| `escapes-box` | text sticks out of the box it sits in (an element with a background or border), or out of the SVG rect/circle it is centred on |
+| `off-canvas` | a box extends past the slide edge (mark intended bleeds with `data-bleed`) |
 | `density` | over 60 words on screen (warning) |
 | `notes` | a slide without speaker notes (warning) |
 | page errors | console errors and exceptions while rendering |
 
 The exit code is 1 when there are errors, so it can run in CI. Text that is part of an illustration (a receipt, a code sample) can opt out with `data-lint-skip`.
+
+Two flags widen the net. Run both before calling a deck done:
+
+```bash
+node deck.mjs check deck.html --timeline       # also every 0.15 s of every step while it animates
+node deck.mjs check deck.html --no-webfonts    # with Google Fonts blocked, as on a locked-down network
+```
+
+Rest frames hide transient problems: in the demo, the scale read-out passed at rest but its minus sign stuck 29 px out of its box for half a second while it settled. Only `--timeline` catches that.
+
+### Performance
+
+```bash
+node deck.mjs perf deck.html
+```
+
+Frame cost per step and per transition, DOM size and live filters; budget 8 ms. See 13-performance.md.
 
 ### 2. `sheet`: the contact sheet
 
@@ -86,8 +105,15 @@ Open the deck, press through it once with presenter view open, and time it.
 - [ ] Groups staggered; nothing important animates at the same time as something else important
 - [ ] Nothing that matters takes longer than two seconds
 
+**Containment**
+- [ ] `check --timeline` and `check --no-webfonts` pass
+- [ ] Boxes with text have no fixed height
+- [ ] Changing numbers fit at their widest value
+
 **Technical**
 - [ ] No `Math.random()`, no CSS transitions or keyframes on content
+- [ ] `perf` under 8 ms; `?perf` shows idle on still slides
+- [ ] Every slide has a title for the control bar and overview
 - [ ] Opens offline after `bundle`
 - [ ] PDF pages match the sheet's final steps
 - [ ] Presenter view shows notes for every slide
@@ -102,3 +128,5 @@ Open the deck, press through it once with presenter view open, and time it.
 - Labels overlapping lines or bars (the demo had two until `check` caught them).
 - SVG `fill`/`font-size` attributes silently overridden by the stylesheet (01-runtime.md, Gotchas).
 - A background that slides under a static slide during a transition.
+- A box with a fixed height that holds only as long as the webfont loads.
+- A counter or read-out sized for its final value, not its widest one.

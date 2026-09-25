@@ -4,7 +4,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-let
 .dk-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
 .dk-layer { position: absolute; inset: 0; display: none; z-index: 0; backface-visibility: hidden; }
 .dk-layer.is-on { display: block; }
-.slide { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; display: none; }
+.slide { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; display: none; contain: layout paint style; }
 .dk-layer.is-on > .slide { display: block; }
 .slide > .notes { display: none !important; }
 .slide [data-anim], .slide [data-step], .slide [data-stagger] > * { transform-box: fill-box; transform-origin: center; }
@@ -39,8 +39,66 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-let
 .dk-help { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(0,0,0,.55);
   font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; color: #111; }
 .dk-help.is-on { display: grid; }
-.dk-help > div { background: #fff; padding: 22px 28px; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-.dk-help td { padding: 3px 16px 3px 0; } .dk-help td:first-child { font-family: ui-monospace, monospace; color: #666; }
+.dk-help > div { background: #fff; padding: 24px 30px 18px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); max-width: min(760px, 92vw); }
+.dk-help h3 { margin: 0 0 12px; font-size: 18px; }
+.dk-help-cols { display: flex; flex-wrap: wrap; gap: 8px 36px; }
+.dk-help caption { text-align: left; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #888; padding-bottom: 4px; }
+.dk-help td { padding: 3px 14px 3px 0; vertical-align: top; } .dk-help td:first-child { color: #555; white-space: nowrap; }
+.dk-help p { margin: 14px 0 0; color: #666; font-size: 13px; }
+kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px solid rgba(127,127,127,.45); border-bottom-width: 2px; border-radius: 4px;
+  font: 600 .85em/1.5 ui-monospace, monospace; text-align: center; }
+
+/* on-screen controls (live mode). Theme with --dk-ui-bg / --dk-ui-fg / --dk-ui-accent. */
+.dk-ui { position: fixed; left: 50%; bottom: 18px; z-index: 80; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; font: 500 14px/1 ui-sans-serif, system-ui, sans-serif; color: var(--dk-ui-fg, #f4f4f4);
+  width: min(760px, calc(100vw - 32px)); padding: 6px 6px 6px; box-sizing: border-box; border-radius: 16px;
+  background: var(--dk-ui-bg, rgba(22,22,24,.88)); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(8px); }
+.dk-ui-on .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dk-scrub { display: flex; gap: 3px; height: 16px; align-items: center; padding: 0 6px 2px; }
+.dk-seg { flex: 1; height: 16px; padding: 6px 0; border: 0; background: none; cursor: pointer; position: relative; }
+.dk-seg::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-track, rgba(255,255,255,.28)); }
+.dk-seg i { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-accent, #ffd23f); transform-origin: 0 50%; transform: scaleX(0); }
+.dk-seg:hover::before { background: rgba(255,255,255,.6); }
+.dk-bar { display: flex; align-items: center; gap: 4px; }
+.dk-b { position: relative; width: 40px; height: 40px; flex: none; border: 0; border-radius: 10px; background: none; color: inherit; cursor: pointer;
+  display: grid; place-items: center; font: 600 17px/1 ui-sans-serif, system-ui, sans-serif; }
+.dk-b svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-b:hover { background: rgba(255,255,255,.12); } .dk-b:disabled { opacity: .3; cursor: default; background: none; }
+.dk-b-next { background: rgba(255,255,255,.14); }
+.dk-where { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.dk-num { font-variant-numeric: tabular-nums; opacity: .7; flex: none; }
+.dk-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dk-steps { display: flex; gap: 5px; flex: none; }
+.dk-steps i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .55; }
+.dk-steps i.on { background: currentColor; opacity: 1; }
+.dk-sep { width: 1px; height: 24px; background: rgba(255,255,255,.2); margin: 0 4px; }
+[data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; padding: 6px 9px; border-radius: 7px; background: #111; color: #fff; font: 500 13px/1 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-seg[data-tip]:hover::after { bottom: 18px; }
+.dk-edge { position: fixed; top: 50%; z-index: 70; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--dk-ui-bg, rgba(22,22,24,.7)); color: var(--dk-ui-fg, #fff); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.dk-edge svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-edge-l { left: 18px; } .dk-edge-r { right: 18px; }
+.dk-edge-l-on .dk-edge-l, .dk-edge-r-on .dk-edge-r { opacity: .8; }
+.dk-edge-l-on, .dk-edge-r-on { cursor: pointer; }
+.dk-hint { position: fixed; left: 50%; top: 22px; z-index: 81; transform: translate(-50%, -8px); opacity: 0; transition: opacity .4s, transform .4s;
+  padding: 10px 16px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.86)); color: var(--dk-ui-fg, #f4f4f4);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; pointer-events: none; white-space: nowrap; }
+.dk-hint.is-on { opacity: 1; transform: translate(-50%, 0); }
+.dk-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%) scale(.96); opacity: 0; transition: opacity .2s, transform .2s;
+  padding: 12px 18px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.9)); color: var(--dk-ui-fg, #fff);
+  font: 600 16px/1.3 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-toast.is-on { opacity: 1; transform: translate(-50%, -50%); }
+.dk-hud { position: fixed; left: 8px; top: 8px; z-index: 99; padding: 5px 8px; border-radius: 6px; background: rgba(0,0,0,.75); color: #9f9;
+  font: 12px/1.2 ui-monospace, monospace; pointer-events: none; }
+.dk-idle .dk-ui, .dk-idle .dk-edge { opacity: 0 !important; pointer-events: none; }
+.dk-warm .dk-layer { visibility: hidden !important; }
+.dk-ov-hint { position: fixed; left: 50%; top: 16px; z-index: 81; transform: translateX(-50%); color: rgba(255,255,255,.7);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+.dk-ov-cap { position: absolute; z-index: 3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: rgba(255,255,255,.75);
+  font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; line-height: 1.2; pointer-events: none; }
+.dk-overview .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .dk-ui, .dk-hint, .dk-toast, .dk-edge { transition: none; } }
 
 /* presenter view */
 body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
@@ -48,7 +106,9 @@ body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
 .dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
 .dk-pv header { display: flex; gap: 28px; align-items: baseline; padding: 14px 22px; border-bottom: 1px solid #2a2a2a; }
 .dk-pv-timer { font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
-.dk-pv-pos { flex: 1; color: #aaa; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
+.dk-pv-pos { flex: 1; color: #aaa; }
+.dk-pv header button { background: #262626; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  font: 600 15px/1 ui-sans-serif, system-ui, sans-serif; } .dk-pv header button:hover { background: #333; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
 .dk-pv main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding: 22px; min-height: 0; }
 .dk-pv aside { display: grid; grid-template-rows: auto 1fr; gap: 18px; min-height: 0; }
 .dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }

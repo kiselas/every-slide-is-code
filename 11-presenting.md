@@ -15,12 +15,19 @@ Open the HTML file in Chrome, Edge or Firefox. It scales to any screen and lette
 | F | fullscreen |
 | B or . | black screen, press again to return |
 | ? | key help |
+| Esc | closes help or black screen; otherwise opens the overview |
 
-Presentation clickers send PgUp/PgDn or arrows, so they work as they are. Links, buttons and anything with `data-no-advance` do not advance on click, so a slide can hold an interactive demo.
+**With the mouse**, move it and the control bar appears at the bottom: back and next buttons, the slide number and title, dots for the steps of the slide (filled up to the current one), a scrubber with one segment per slide (hover shows the title, click jumps), and buttons for the overview, presenter view, fullscreen and help. It hides after a few seconds of stillness, so it never sits on the projected slide. Clicking the slide itself goes forward; clicking its left fifth goes back, and an arrow at the edge shows which way a click will go.
+
+**On touch screens**, swipe or tap the sides.
+
+The first seconds show a hint with the main keys. Typing a number shows "Go to slide 12 · Enter". Reaching the last step shows "End of the deck".
+
+Presentation clickers send PgUp/PgDn or arrows, so they work as they are. Links, buttons and anything with `data-no-advance` do not advance on click, so a slide can hold an interactive demo. For a kiosk or an embedded deck, `data-controls="off"` on `.deck` removes the on-screen controls; keys still work.
 
 ## Presenter view
 
-**P** opens a second window: the current slide (live, with animations), the next state (as a rest frame), the speaker notes in large type, a timer (click to reset) and the clock. Move it to your laptop screen and put the deck window fullscreen on the projector. Either window drives both.
+**P** (or the button in the control bar) opens a second window: the current slide (live, with animations), the next state (as a rest frame), the speaker notes in large type, back/next buttons, the position ("4 / 15 · step 2 of 3"), a timer (click to reset) and the clock. Move it to your laptop screen and put the deck window fullscreen on the projector. Either window drives both.
 
 Notes come from `<aside class="notes">` inside each slide and can hold HTML: paragraphs, a bold number, a list of beats.
 
@@ -30,6 +37,7 @@ Notes come from `<aside class="notes">` inside each slide and can hold HTML: par
 - For offline or locked-down laptops: `node export/deck.mjs bundle deck.html deck.offline.html` inlines Google Fonts and CDN scripts into one file.
 - Export a PDF as a backup and for people who ask for "the slides" (`node export/deck.mjs pdf deck.html`).
 - Rehearse with presenter view and the timer. If a slide takes more than two minutes, split it.
+- Open the deck once with `?perf` on the presentation laptop with presenter view open: every still slide should say "idle", and transitions should hold 60 fps (13-performance.md).
 - Turn off notifications, set the display to never sleep, and close other windows that might steal focus.
 
 ## In the room

@@ -35,9 +35,27 @@ Short rules. The details are in the neighbouring files.
 20. Body text at least 24 px on the 1080 canvas, labels at least 20 px. Titles 72–110 px. The runtime's `check` flags anything under 20 px.
 21. Under 40 words on screen per step. What does not fit goes into speaker notes (`<aside class="notes">`).
 22. Safe area: keep text at least 60 px from the edges (the check flags under 38 px).
-23. Fonts are loaded before the first frame (`display=block`, `document.fonts.ready` is awaited by the runtime).
+23. Fonts are loaded before the first frame (`display=block`; the runtime lays every slide out once and awaits `document.fonts.ready`).
+
+## Containment: nothing leaves its box
+24. A box with text hugs its content: `min-height` and padding, never a fixed `height`. Fix the width, let the height follow.
+25. Assume the font may not load. On a locked-down network the fallback font is wider, so leave 10–15% slack in every box and give titles `data-fit="2"` (shrink to at most two lines).
+26. A value that changes (a counter, a read-out, a label that follows a moving point) must fit at its widest: the minus sign, the most digits, the longest unit. Size it for "−0.000 kg", not for "0.000 kg".
+27. Text that sits on a shape (a node, a bar label inside the bar, a circle) must stay inside the shape; if the text is dynamic, check the longest case.
+28. Before calling a deck done: `check --timeline` (mid-animation frames, where counters and moving labels spill out) and `check --no-webfonts` (fallback fonts).
+
+## Navigation
+29. Keep the on-screen controls on: bar with back/next, slide title, step dots and a scrubber, the first-run hint, click zones (left fifth back, the rest forward). Turn them off (`data-controls="off"`) only for kiosks and embeds.
+30. Every slide has a real title (an h1–h3 or `data-title`): it is what the control bar, the scrubber tooltips, the overview captions and presenter view show.
+31. Interactive elements inside a slide carry `data-no-advance`, so a click on them does not advance.
+
+## Performance
+32. Never read layout inside `frame` (`offsetHeight`, `getBoundingClientRect`, `getComputedStyle`): measure once in `setup` or an animation's `init`.
+33. Motion driven by `st.since()` declares its length with `active: seconds` on the slide spec; `st.T` and `st.life()` are only for real ambient motion. Otherwise the slide never goes idle.
+34. Animate transform and opacity; keep blur and filters small and one at a time; keep each slide under a few hundred DOM nodes (a canvas for dense marks).
+35. `node export/deck.mjs perf` stays under 8 ms per frame; `?perf` shows "idle" on every still slide (13-performance.md).
 
 ## Check
-24. After every version run `node export/deck.mjs check deck.html` and `sheet`, open the sheet, describe what you see, then fix by slide and step number.
-25. Check at least one transition with `strip` when you add or change it.
-26. Numbers in an invented deck are labelled as illustrative on the title slide. Never present made-up figures as real data.
+36. After every version run `node export/deck.mjs check deck.html` and `sheet`, open the sheet, describe what you see, then fix by slide and step number.
+37. Check at least one transition with `strip` when you add or change it.
+38. Numbers in an invented deck are labelled as illustrative on the title slide. Never present made-up figures as real data.

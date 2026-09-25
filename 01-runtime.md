@@ -53,7 +53,8 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 |---|---|
 | `data-transition` | default transition into every slide (`fade` if absent) |
 | `data-transition-dur`, `data-dir`, `data-origin`, `data-color`, `data-lift` | default transition options |
-| `data-chrome="progress,number"` | thin progress bar, slide counter |
+| `data-chrome="progress,number"` | a progress bar and a slide counter drawn inside the slide (they appear in exports) |
+| `data-controls="off"` | no on-screen controls (kiosk, embedded deck); keys still work |
 | `data-hold="3"` | seconds per step in the video timeline |
 | `data-dim=".28"` | opacity of dimmed builds |
 | `data-fps="30"` | frame rate reported to the video exporter |
@@ -93,6 +94,7 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `data-bleed` | allowed to touch the edges; the check skips it |
 | `data-lint-skip` | an illustration made of text (a receipt, a code sample): the check ignores its text |
 | `data-no-advance` | clicking it does not go to the next step |
+| `data-fit` | shrink the element's font until its content fits its box; `data-fit="2"`: until the text takes at most 2 lines; `data-fit-min=".6"` is the floor. Runs once, after fonts load |
 
 ### Animations (`data-anim`)
 
@@ -131,6 +133,7 @@ Deck.anim('feed', { dur: 1.6, curve: Deck.ease.linear,
 ```js
 Deck.slide('bars', {
   steps: 2,                    // optional: steps that exist only in code
+  active: 3,                   // optional: seconds of motion driven by st.since() (default 4)
   setup(el, D) {               // once, before builds are parsed: build DOM/SVG here
     el._bars = data.map(d => D.svg('rect', { x: ..., width: ... }, el.querySelector('svg')));
   },
@@ -153,7 +156,7 @@ Elements created in `setup` may carry `data-step`/`data-anim`: builds are parsed
 | `st.t` | seconds since the step began (`Infinity` in a rest frame) |
 | `st.T` | global clock, for ambient motion that should not restart per step |
 | `st.p(n, delay, dur, curve)` | progress of something that starts at step n: 0 before, eased 0..1 during, 1 after |
-| `st.since(n)` | raw seconds since step n began (`Infinity` if passed, `-Infinity` if ahead) |
+| `st.since(n)` | raw seconds since step n began (`Infinity` if passed, `-Infinity` if ahead). Counts as motion for `active` seconds |
 | `st.at(n)` | `step >= n` |
 | `st.life(period, amp, phase)` | a sine for breathing and pulsing; returns 0 in rest frames so exports stay canonical |
 | `st.rest` | true when rendering a rest frame for export |
@@ -163,6 +166,8 @@ Rules for `frame`:
 - Set every property you animate on every frame. Never "set once when p reaches 1": the next frame may be an earlier state.
 - Derive everything from `st`. Do not read the previous value back from the DOM.
 - Ambient motion (`st.T`, `st.life`) must be decorative: in rest frames it freezes at its zero pose.
+- The runtime knows when a step's motion ends from `st.p(...)`, the builds and `active`. After that, a slide that did not read `st.T` goes idle and costs nothing (13-performance.md).
+- Never read layout (`offsetHeight`, `getBoundingClientRect`) in `frame`; measure in `setup`. Fonts are loaded before `setup` runs, so measurements there are final.
 
 ## Helpers
 
@@ -193,8 +198,11 @@ For something the helpers do not cover (a sankey, a map projection, force layout
 | `?presenter` | presenter view (opened with **P**; see 11-presenting.md) |
 | `?embed`, `?embed&rest` | slide only, no input; `rest` shows rest frames. Used inside presenter view |
 | `?render`, `?render&hold=1.2` | exporter: scale 1, no clock. `hold` overrides every step's hold in the timeline |
+| `?perf` | live, with a frame-rate HUD (13-performance.md) |
 
-Keys: → ↓ Space PgDn next · ← ↑ PgUp previous · Home/End · digits + Enter go to slide · **O** overview · **P** presenter · **F** fullscreen · **B** or **.** black screen · **?** help.
+Keys: → ↓ Space PgDn next · ← ↑ PgUp previous · Home/End · digits + Enter go to slide · **O** or **Esc** overview · **P** presenter · **F** fullscreen · **B** or **.** black screen · **?** help.
+
+Mouse and touch: a click on the right four-fifths of the screen goes forward, on the left fifth back (an arrow appears near the edge); swipe left/right. Moving the mouse shows the control bar: back/next, slide number and title, one dot per step, a scrubber with every slide (hover for its title, click to jump), overview, presenter view, fullscreen and help. It hides after 2.6 s without movement. A hint with the main keys shows for the first seconds; reaching either end of the deck shows a short message. `Deck.toast('text')` shows your own.
 
 Going back lands on a step already finished (no replay), exactly as Keynote does. Pressing next during a transition completes it and moves on.
 

@@ -102,10 +102,10 @@ anim('draw', { dur: 1.2, curve: ease.inOutCubic,
 // Number counts up to the value written in the markup, so the rest frame is the authored text.
 anim('count', { dur: 1.6, curve: ease.outExpo,
   init(el) {
-    const m = el.textContent.trim().match(/^([^\d-]*)(-?[\d,]*\.?\d+)([\s\S]*)$/);
+    const m = el.textContent.trim().match(/^([^\d\-−]*)([-−]?[\d,]*\.?\d+)([\s\S]*)$/);
     if (!m) return null;
-    return { pre: m[1], suf: m[3], to: parseFloat(m[2].replace(/,/g, '')), dec: (m[2].split('.')[1] || '').length,
-      comma: m[2].includes(','), from: parseFloat(el.dataset.from || 0), last: '' };
+    return { pre: m[1], suf: m[3], to: parseFloat(m[2].replace(/,/g, '').replace('−', '-')), dec: (m[2].split('.')[1] || '').length,
+      comma: m[2].includes(','), from: parseFloat(String(el.dataset.from || 0).replace('−', '-')), last: '' };
   },
   f(el, e, i) {
     const c = i.b.data;
@@ -343,6 +343,23 @@ function pointAt(path, p) {
   const q = path.getPointAtLength(clamp(p) * L); return { x: q.x, y: q.y };
 }
 
+/* ───────────────────────── fit text ─────────────────────────
+ * data-fit       shrink until the content fits the element's box (it needs a width, and a height to fit both)
+ * data-fit="2"   shrink until the text takes at most 2 lines
+ * Runs once after fonts load; never below data-fit-min (default .6) of the authored size. */
+function fitText(n) {
+  const cs = getComputedStyle(n), size0 = parseFloat(cs.fontSize), lines = +n.dataset.fit || 0;
+  const min = size0 * num(n.dataset.fitMin, .6);
+  const lh = sz => { const v = parseFloat(getComputedStyle(n).lineHeight); return isFinite(v) ? v : sz * 1.2; };
+  const fits = sz => {
+    if (n.scrollWidth > n.clientWidth + 1) return false;
+    if (lines) return n.offsetHeight <= lh(sz) * lines + 2;
+    return n.scrollHeight <= n.clientHeight + 1;   // auto-height boxes always pass
+  };
+  let sz = size0;
+  while (!fits(sz) && sz > min) { sz = Math.max(min, sz - Math.max(1, sz * .03)); n.style.fontSize = sz + 'px'; }
+}
+
 /* ───────────────────────── slides & builds ───────────────────────── */
 let slides = [];
 const num = (v, d) => (v == null || v === '' ? d : +v);
@@ -422,6 +439,10 @@ function stepLT(n, st, delay) {
 function setStyle(b, k, v) { if (b.cache[k] !== v) { b.cache[k] = v; b.el.style[k] = v; } }
 
 function applyBuild(b, st) {
+  const e0 = st.step === 0 ? st.entry : 0;
+  if (!b.noIn && b.step === st.step) st._end = Math.max(st._end, e0 + b.delay + b.dur);
+  if (b.out === st.step) st._end = Math.max(st._end, e0 + b.outDelay + b.dur);
+  if (b.dim === st.step) st._end = Math.max(st._end, e0 + .5);
   const lt = b.noIn ? Infinity : stepLT(b.step, st, b.delay);
   let raw = seg(lt, 0, b.dur), leaving = false;
   if (b.out != null) {
@@ -439,16 +460,23 @@ function applyBuild(b, st) {
   setStyle(b, 'clipPath', r.clip && (raw < 1 || b.name === 'mask') ? r.clip : '');
 }
 
+// st records what the frame depended on: the latest end time it asked about (_end) and
+// whether it read the global clock (_usesT). A slide past _end that never read T is idle.
 function mkState(s, step, t, T, rest) {
+  const e0 = n => (n === 0 ? s.entry : 0);
   const st = {
-    slide: s, i: s.i, id: s.id, step, t, T, rest, last: s.steps, entry: s.entry, W, H,
+    slide: s, i: s.i, id: s.id, step, t, rest, last: s.steps, entry: s.entry, W, H, _end: 0, _usesT: false,
+    get T() { st._usesT = true; return T; },
     // progress 0..1 of a build that starts at `step n` (+delay) and lasts dur
-    p: (n, delay = 0, dur = .8, curve = ease.outCubic) => curve(seg(stepLT(n, st, delay), 0, dur)),
-    // raw local seconds since step n began (Infinity if passed)
-    since: n => stepLT(n, st, 0),
+    p: (n, delay = 0, dur = .8, curve = ease.outCubic) => {
+      if (n === step) st._end = Math.max(st._end, e0(n) + delay + dur);
+      return curve(seg(stepLT(n, st, delay), 0, dur));
+    },
+    // raw local seconds since step n began (Infinity if passed); counts as active for hook.active seconds
+    since: n => { if (n === step) st._end = Math.max(st._end, e0(n) + (s.hook.active ?? 4)); return stepLT(n, st, 0); },
     at: n => step >= n,
     // ambient motion; frozen in rest frames so PDF pages are canonical
-    life: (period = 4, amp = 1, phase = 0) => (rest ? 0 : Math.sin(T / period * Math.PI * 2 + phase) * amp),
+    life: (period = 4, amp = 1, phase = 0) => { st._usesT = true; return rest ? 0 : Math.sin(T / period * Math.PI * 2 + phase) * amp; },
   };
   return st;
 }
@@ -472,18 +500,29 @@ function setupStage() {
   stageSpec.setup?.(stageCtx, { W, H, deck: deckEl });
 }
 function resizeStage() {
-  if (!stageCv) return;
+  if (!stageCv) return false;
   const q = MODE === 'live' ? Math.min(2, (devicePixelRatio || 1) * fitK) : 1;
   const w = Math.round(W * q), h = Math.round(H * q);
-  if (stageCv.width === w && stageCv.height === h) return;
+  if (stageCv.width === w && stageCv.height === h) return false;
   stageQ = q; stageCv.width = w; stageCv.height = h;
+  return true;
 }
+let stageKey = '', stageUsesT = false, stagePos = null;
+// Redraws only when the camera moved, the canvas was resized, or the drawing reads the clock.
+// Returns true while the stage animates (it then keeps the deck from going idle).
 function drawStage(info) {
-  if (!stageCv) return;
-  resizeStage();
-  const c = stageCtx;
-  c.setTransform(stageQ, 0, 0, stageQ, 0, 0);
-  stageSpec.draw(c, { W, H, slides: slides.map(s => s.pos), ...info });
+  if (!stageCv) return false;
+  const resized = resizeStage(), c = info.cam;
+  const key = `${c.x},${c.y},${c.s},${info.rest},${info.i}`;
+  if (!resized && !stageUsesT && key === stageKey) return false;
+  stageKey = key;
+  stagePos = stagePos || slides.map(s => s.pos);
+  const T = info.T; let used = false;
+  const S2 = { W, H, slides: stagePos, ...info, get T() { used = true; return T; } };
+  stageCtx.setTransform(stageQ, 0, 0, stageQ, 0, 0);
+  stageSpec.draw(stageCtx, S2);
+  stageUsesT = used && !info.rest;
+  return stageUsesT;
 }
 
 /* ───────────────────────── overlays ───────────────────────── */
@@ -571,6 +610,7 @@ function renderTransition(tr, p, T) {
   const { A, B, cfg } = tr;
   resetLayer(A); resetLayer(B); veil.style.cssText = '';
   if (cfg.spec.opaque) A.layer.style.background = B.layer.style.background = `var(--dk-card, ${deckBg})`;
+  A.layer.style.willChange = B.layer.style.willChange = 'transform, opacity';
   B.layer.style.zIndex = 1;
   const o = { ...cfg, veil, from: A, to: B, morph: tr.morph, cam: null };
   const fs = tr.from, ts = tr.to;
@@ -582,23 +622,31 @@ function renderTransition(tr, p, T) {
 function camOf(s) { return { x: s.pos.x, y: s.pos.y, s: s.pos.s }; }
 function lerpCam(a, b, e) { return { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, e), s: lerp(a.s, b.s, e) }; }
 
-// One frame for the live clock.
+// One frame for the live clock. Once every build of the step has finished and nothing reads
+// the clock, the slide is idle and frames are skipped until the state changes.
+const perf = { rendered: 0, skipped: 0, ms: 0, worst: 0 };
 function frame(T) {
   if (S.tr) {
     const p = (T - S.tr.start) / Math.max(1e-6, S.tr.dur);
-    if (p >= 1) { endTransition(S.tr); S.tr = null; }
+    if (p >= 1) { endTransition(S.tr); S.tr = null; S.dirty = true; }
     else {
       const o = renderTransition(S.tr, p, T);
       drawStage({ T, rest: false, i: lerp(S.tr.A.i, S.tr.B.i, ease.inOutCubic(p)), p, from: S.tr.A.i, to: S.tr.B.i,
         cam: o.cam || camOf(S.tr.B) });
       chrome();
+      perf.rendered++;
       return;
     }
   }
-  const s = slides[S.i];
-  renderSlide(s, S.step, S.settled ? Infinity : T - S.t0, T);
-  drawStage({ T, rest: false, i: S.i, p: 1, from: S.i, to: S.i, cam: camOf(s) });
+  const key = `${S.i}.${S.step}.${S.settled}.${S.t0}`;
+  if (S.idle && S.idleKey === key && !S.dirty) { perf.skipped++; return; }
+  const s = slides[S.i], t = S.settled ? Infinity : T - S.t0;
+  const st = renderSlide(s, S.step, t, T);
+  const stageLive = drawStage({ T, rest: false, i: S.i, p: 1, from: S.i, to: S.i, cam: camOf(s) });
   chrome();
+  S.idle = !st._usesT && !stageLive && t >= st._end;
+  S.idleKey = key; S.dirty = false;
+  perf.rendered++;
 }
 function chrome() {
   const n = slides.length, s = slides[S.i];
@@ -614,6 +662,7 @@ function changed(action) {
     if (location.hash !== h) history.replaceState(null, '', h);
   }
   for (const f of listeners) f({ i: S.i, step: S.step, action });
+  hideHint(); uiUpdate();
 }
 function finishTr() { if (S.tr) { endTransition(S.tr); S.tr = null; } }
 function toSlide(i, step, sign, settled) {
@@ -629,14 +678,14 @@ function next() {
   if (S.tr) finishTr();
   if (S.step < s.steps) { S.step++; S.t0 = now(); S.settled = false; }
   else if (S.i < slides.length - 1) toSlide(S.i + 1, 0, 1, false);
-  else return;
+  else { toast('End of the deck · Home to start again'); return; }
   changed('next');
 }
 function prev() {
   if (S.tr) finishTr();
   if (S.step > 0) { S.step--; S.t0 = now(); S.settled = true; }
   else if (S.i > 0) toSlide(S.i - 1, slides[S.i - 1].steps, -1, true);
-  else return;
+  else { toast('First slide'); return; }
   changed('prev');
 }
 function goto(i, step = 0, { animate = false } = {}) {
@@ -675,6 +724,7 @@ function fit() {
   const vw = innerWidth, vh = innerHeight;
   fitK = Math.min(vw / W, vh / H);
   deckEl.style.transform = `translate(${(vw - W * fitK) / 2}px, ${(vh - H * fitK) / 2}px) scale(${fitK})`;
+  S.dirty = true;
 }
 
 /* ───────────────────────── overview & help ───────────────────────── */
@@ -685,31 +735,137 @@ function toggleOverview(on = !overview) {
   if (on) {
     finishTr();
     const n = slides.length, cols = Math.ceil(Math.sqrt(n * 1.25)), rows = Math.ceil(n / cols), g = 28;
-    const z = Math.min((W - g * (cols + 1)) / (cols * W), (H - g * (rows + 1)) / (rows * H));
-    const ox = (W - (cols * W * z + (cols - 1) * g)) / 2, oy = (H - (rows * H * z + (rows - 1) * g)) / 2;
+    const cap = 15 / fitKLive(), gy = g + cap * 1.9, top = 44 / fitKLive();   // caption height and a hint row, in canvas px
+    const z = Math.min((W - g * (cols + 1)) / (cols * W), (H - top - gy * rows) / (rows * H));
+    const ox = (W - (cols * W * z + (cols - 1) * g)) / 2, oy = top + (H - top - (rows * H * z + (rows - 1) * gy + cap * 1.9)) / 2;
     ovSel = S.i;
     for (const s of slides) {
       layerOn(s, true);
-      const c = s.i % cols, r = Math.floor(s.i / cols);
+      const c = s.i % cols, r = Math.floor(s.i / cols), x = ox + c * (W * z + g), y = oy + r * (H * z + gy);
       renderSlide(s, s.steps, Infinity, 0, true);
-      Object.assign(s.layer.style, { transformOrigin: '0 0', background: deckBg,
-        transform: `translate(${ox + c * (W * z + g)}px, ${oy + r * (H * z + g)}px) scale(${z})` });
+      Object.assign(s.layer.style, { transformOrigin: '0 0', background: `var(--dk-card, ${deckBg})`,
+        transform: `translate(${x}px, ${y}px) scale(${z})` });
+      el('div', { class: 'dk-ov-cap', text: `${s.i + 1}  ${s.title}`, style: { left: x + 'px', top: y + H * z + cap * .45 + 'px',
+        width: W * z + 'px', fontSize: cap + 'px' } }, deckEl);
     }
     markOv();
+    if (!document.querySelector('.dk-ov-hint')) el('div', { class: 'dk-ov-hint', html: 'Click a slide, or use the arrows and <kbd>Enter</kbd> · <kbd>Esc</kbd> to go back' }, document.body);
   } else {
+    document.querySelector('.dk-ov-hint')?.remove();
     for (const s of slides) { resetLayer(s); s.layer.classList.remove('dk-ov-sel'); layerOn(s, s.i === S.i); }
+    for (const c of deckEl.querySelectorAll('.dk-ov-cap')) c.remove();
+    S.dirty = true; stageKey = '';
   }
+  uiUpdate();
 }
 function markOv() { for (const s of slides) s.layer.classList.toggle('dk-ov-sel', s.i === ovSel); }
 function toggleHelp(on) {
   if (!help) {
-    help = el('div', { class: 'dk-help', html: `<div><b>deck-kit</b><table>
-      <tr><td>→ Space PgDn</td><td>next</td></tr><tr><td>← PgUp</td><td>previous</td></tr>
-      <tr><td>Home / End</td><td>first / last</td></tr><tr><td>3 Enter</td><td>go to slide 3</td></tr>
-      <tr><td>O</td><td>overview</td></tr><tr><td>P</td><td>presenter view</td></tr>
-      <tr><td>F</td><td>fullscreen</td></tr><tr><td>B</td><td>black screen</td></tr><tr><td>?</td><td>this help</td></tr></table></div>` }, document.body);
+    help = el('div', { class: 'dk-help', html: `<div role="dialog" aria-label="Keyboard shortcuts"><h3>Shortcuts</h3><div class="dk-help-cols">
+      <table><caption>Move</caption>
+        <tr><td><kbd>→</kbd> <kbd>Space</kbd> <kbd>PgDn</kbd></td><td>next step</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>PgUp</kbd></td><td>back</td></tr>
+        <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>first / last slide</td></tr>
+        <tr><td><kbd>7</kbd> <kbd>Enter</kbd></td><td>go to slide 7</td></tr>
+        <tr><td>click right / left side</td><td>next / back</td></tr>
+        <tr><td>swipe</td><td>next / back</td></tr></table>
+      <table><caption>Views</caption>
+        <tr><td><kbd>O</kbd> <kbd>Esc</kbd></td><td>all slides</td></tr>
+        <tr><td><kbd>P</kbd></td><td>presenter view with notes</td></tr>
+        <tr><td><kbd>F</kbd></td><td>fullscreen</td></tr>
+        <tr><td><kbd>B</kbd> <kbd>.</kbd></td><td>black screen</td></tr>
+        <tr><td><kbd>?</kbd></td><td>this help</td></tr></table></div>
+      <p>Dots under the title show the steps left on this slide. The bar at the bottom jumps to any slide.</p></div>` }, document.body);
+    help.addEventListener('click', e => { if (e.target === help) toggleHelp(false); });
   }
   help.classList.toggle('is-on', on ?? !help.classList.contains('is-on'));
+}
+
+/* ───────────────────────── on-screen controls ─────────────────────────
+ * Live mode only, outside the scaled canvas, so they never reach an export.
+ * data-controls="off" on .deck disables them (kiosk, embedded decks). */
+const ICON = {
+  prev: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg>',
+  pv: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="12" height="9" rx="1"/><path d="M18 7h3M18 11h3M3 18h18"/></svg>',
+  fs: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+};
+let ui = null, uiT = 0, uiHover = false, hintEl = null, toastEl = null, toastT = 0, uiKey = '';
+function controls() {
+  if (MODE !== 'live') return;
+  toastEl = el('div', { class: 'dk-toast', role: 'status' }, document.body);
+  if (deckEl.dataset.controls === 'off') return;
+  ui = el('div', { class: 'dk-ui', html: `
+    <div class="dk-scrub" role="navigation" aria-label="Slides">${slides.map(s =>
+      `<button class="dk-seg" data-i="${s.i}" data-tip="${s.i + 1}. ${s.title.replace(/"/g, '&quot;')}" aria-label="Slide ${s.i + 1}: ${s.title.replace(/"/g, '&quot;')}"><i></i></button>`).join('')}</div>
+    <div class="dk-bar">
+      <button class="dk-b" data-act="prev" data-tip="Back (←)" aria-label="Back">${ICON.prev}</button>
+      <div class="dk-where"><b class="dk-num"></b><span class="dk-title"></span><span class="dk-steps"></span></div>
+      <button class="dk-b dk-b-next" data-act="next" data-tip="Next (→ or click)" aria-label="Next">${ICON.next}</button>
+      <i class="dk-sep"></i>
+      <button class="dk-b" data-act="overview" data-tip="All slides (O)" aria-label="All slides">${ICON.grid}</button>
+      <button class="dk-b" data-act="presenter" data-tip="Presenter view (P)" aria-label="Presenter view">${ICON.pv}</button>
+      <button class="dk-b" data-act="fullscreen" data-tip="Fullscreen (F)" aria-label="Fullscreen">${ICON.fs}</button>
+      <button class="dk-b" data-act="help" data-tip="Shortcuts (?)" aria-label="Shortcuts">?</button>
+    </div>` }, document.body);
+  el('div', { class: 'dk-edge dk-edge-l', html: ICON.prev }, document.body);
+  el('div', { class: 'dk-edge dk-edge-r', html: ICON.next }, document.body);
+  hintEl = el('div', { class: 'dk-hint', html: '<kbd>→</kbd> or click to advance · <kbd>←</kbd> back · <kbd>O</kbd> all slides · <kbd>?</kbd> shortcuts' }, document.body);
+  setTimeout(() => hintEl.classList.add('is-on'), 600);
+  setTimeout(hideHint, 6000);
+  ui.addEventListener('mouseenter', () => { uiHover = true; showUI(); });
+  ui.addEventListener('mouseleave', () => { uiHover = false; showUI(); });
+  ui.addEventListener('click', e => {
+    e.stopPropagation();
+    const b = e.target.closest('[data-act],[data-i]'); if (!b) return;
+    if (b.dataset.i != null) { if (overview) toggleOverview(false); goto(+b.dataset.i, 0, { animate: Math.abs(+b.dataset.i - S.i) === 1 }); }
+    else ({ prev, next, help: () => toggleHelp(), overview: () => toggleOverview(), presenter: openPresenter,
+      fullscreen: () => (document.fullscreenElement ? document.exitFullscreen() : html.requestFullscreen?.()) })[b.dataset.act]();
+    broadcast();
+  });
+  showUI(4500);
+  uiUpdate();
+}
+function hideHint() { if (hintEl) { hintEl.classList.remove('is-on'); hintEl = null; } }
+function showUI(ms = 2600) {
+  if (!ui) return;
+  html.classList.add('dk-ui-on');
+  clearTimeout(uiT);
+  uiT = setTimeout(() => { if (!uiHover) html.classList.remove('dk-ui-on'); }, ms);
+}
+function toast(msg, ms = 1800) {
+  if (!toastEl) return;
+  toastEl.textContent = msg; toastEl.classList.add('is-on');
+  clearTimeout(toastT);
+  if (ms) toastT = setTimeout(() => toastEl.classList.remove('is-on'), ms);
+}
+function uiUpdate() {
+  if (!ui) return;
+  const s = slides[S.i], key = `${S.i}.${S.step}.${overview}`;
+  if (key === uiKey) return; uiKey = key;
+  ui.querySelector('.dk-num').textContent = `${S.i + 1} / ${slides.length}`;
+  ui.querySelector('.dk-title').textContent = s.title;
+  const dots = ui.querySelector('.dk-steps');
+  dots.innerHTML = s.steps ? Array.from({ length: s.steps + 1 }, (_, k) => `<i class="${k <= S.step ? 'on' : ''}"></i>`).join('') : '';
+  dots.title = s.steps ? `step ${S.step + 1} of ${s.steps + 1}` : '';
+  ui.querySelectorAll('.dk-seg').forEach((b, k) => {
+    b.classList.toggle('is-past', k < S.i); b.classList.toggle('is-cur', k === S.i);
+    b.firstChild.style.transform = `scaleX(${k < S.i ? 1 : k > S.i ? 0 : (S.step + 1) / (s.steps + 1)})`;
+  });
+  ui.querySelector('[data-act=prev]').disabled = S.i === 0 && S.step === 0;
+  ui.querySelector('[data-act=next]').disabled = S.i === slides.length - 1 && S.step === s.steps;
+}
+function hud() {
+  const d = el('div', { class: 'dk-hud' }, document.body);
+  let frames = 0, last = performance.now(), prevR = 0;
+  const tick = () => { frames++; requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  setInterval(() => {
+    const t = performance.now(), sec = (t - last) / 1000, s = slides[S.i];
+    d.textContent = `${Math.round(frames / sec)} fps · drawn ${Math.round((perf.rendered - prevR) / sec)}/s · ${perf.ms.toFixed(2)} ms (worst ${perf.worst.toFixed(1)}) · ${S.tr ? 'transition' : S.idle ? 'idle' : 'animating'} · ${s.el.getElementsByTagName('*').length} nodes`;
+    frames = 0; last = t; prevR = perf.rendered; perf.worst = 0;
+  }, 500);
 }
 
 /* ───────────────────────── presenter view ───────────────────────── */
@@ -731,7 +887,8 @@ function presenterUI() {
   const base = location.href.split('#')[0].split('?')[0];
   document.body.classList.add('dk-presenter');
   const ui = el('div', { class: 'dk-pv', html: `
-    <header><span class="dk-pv-timer" title="click to reset">00:00</span><span class="dk-pv-pos"></span><span class="dk-pv-clock"></span></header>
+    <header><span class="dk-pv-timer" title="click to reset">00:00</span><span class="dk-pv-pos"></span>
+      <button data-pv="prev" aria-label="Back">‹ Back</button><button data-pv="next" aria-label="Next">Next ›</button><span class="dk-pv-clock"></span></header>
     <main>
       <section class="dk-pv-cur"><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
       <aside><div class="dk-pv-next"><label>Next</label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></div>
@@ -742,6 +899,8 @@ function presenterUI() {
   const timer = ui.querySelector('.dk-pv-timer'), pos = ui.querySelector('.dk-pv-pos'), clock = ui.querySelector('.dk-pv-clock'), notes = ui.querySelector('.dk-pv-notes');
   let t0 = Date.now();
   timer.onclick = () => { t0 = Date.now(); };
+  ui.querySelector('[data-pv=prev]').onclick = () => { prev(); broadcast(); };
+  ui.querySelector('[data-pv=next]').onclick = () => { next(); broadcast(); };
   const two = n => String(n).padStart(2, '0');
   setInterval(() => {
     const e = Math.floor((Date.now() - t0) / 1000);
@@ -751,7 +910,7 @@ function presenterUI() {
   let nxtKey = '';
   const refresh = () => {
     const s = slides[S.i], n = nextState(S.i, S.step);
-    pos.textContent = `${S.i + 1} / ${slides.length}${s.steps ? ` · step ${S.step}/${s.steps}` : ''} · ${s.title}`;
+    pos.textContent = `${S.i + 1} / ${slides.length}${s.steps ? ` · step ${S.step + 1} of ${s.steps + 1}` : ''} · ${s.title}`;
     notes.innerHTML = s.notes || '<em>No notes for this slide.</em>';
     const key = n ? `${n.i + 1}.${n.step}` : 'end';
     if (key !== nxtKey) {
@@ -767,13 +926,13 @@ function presenterUI() {
 
 /* ───────────────────────── input ───────────────────────── */
 function input() {
-  let buf = '';
+  let buf = '', bufT = 0;
   addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('input,textarea,select,[contenteditable]')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key;
-    if (/^\d$/.test(k)) { buf += k; return; }
-    if (k === 'Enter' && buf) { if (overview) toggleOverview(false); goto(+buf - 1); buf = ''; e.preventDefault(); return; }
+    if (/^\d$/.test(k)) { buf += k; toast(`Go to slide ${buf} · Enter`, 2500); clearTimeout(bufT); bufT = setTimeout(() => { buf = ''; }, 2500); return; }
+    if (k === 'Enter' && buf) { if (overview) toggleOverview(false); goto(+buf - 1); toast('', 1); buf = ''; e.preventDefault(); broadcast(); return; }
     buf = '';
     if (overview) {
       const cols = Math.ceil(Math.sqrt(slides.length * 1.25));
@@ -794,29 +953,45 @@ function input() {
       case 'f': case 'F': document.fullscreenElement ? document.exitFullscreen() : html.requestFullscreen?.(); break;
       case 'b': case 'B': case '.': blackout.classList.toggle('is-on'); break;
       case '?': case 'h': case 'H': toggleHelp(); break;
-      case 'Escape': toggleHelp(false); blackout.classList.remove('is-on'); break;
+      case 'Escape':
+        if (help && help.classList.contains('is-on')) toggleHelp(false);
+        else if (blackout.classList.contains('is-on')) blackout.classList.remove('is-on');
+        else if (MODE === 'live') toggleOverview();
+        break;
       default: return;
     }
     e.preventDefault();
     broadcast();
   });
   if (MODE !== 'live') return;
-  deckEl.addEventListener('click', e => {
+  // Click anywhere: the left fifth of the screen goes back, the rest goes forward.
+  let swiped = 0;
+  const EDGE = .2;
+  addEventListener('click', e => {
+    if (Date.now() - swiped < 500) return;
+    if (e.target.closest('.dk-ui,.dk-help,.dk-toast')) return;
     if (overview) {
       const layer = e.target.closest('.dk-layer'); if (!layer) return;
       const s = slides.find(x => x.layer === layer); toggleOverview(false); goto(s.i); broadcast(); return;
     }
     if (e.target.closest('a,button,input,select,textarea,label,[data-no-advance]')) return;
-    next(); broadcast();
+    e.clientX < innerWidth * EDGE ? prev() : next(); broadcast();
   });
-  let tx = null;
-  addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  let tx = null, ty = null;
+  addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; showUI(); }, { passive: true });
   addEventListener('touchend', e => {
-    if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; tx = null;
-    if (Math.abs(dx) > 50) { dx < 0 ? next() : prev(); broadcast(); }
+    if (tx == null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { swiped = Date.now(); dx < 0 ? next() : prev(); broadcast(); }
   });
   let idle;
-  addEventListener('mousemove', () => { html.classList.remove('dk-idle'); clearTimeout(idle); idle = setTimeout(() => html.classList.add('dk-idle'), 2000); });
+  addEventListener('mousemove', e => {
+    html.classList.remove('dk-idle'); clearTimeout(idle); idle = setTimeout(() => html.classList.add('dk-idle'), 2600);
+    showUI();
+    const x = e.clientX / innerWidth, inUI = !!e.target.closest?.('.dk-ui');
+    html.classList.toggle('dk-edge-l-on', !overview && !inUI && x < EDGE);
+    html.classList.toggle('dk-edge-r-on', !overview && !inUI && x > 1 - EDGE);
+  });
+  document.addEventListener('mouseleave', () => html.classList.remove('dk-edge-l-on', 'dk-edge-r-on'));
   addEventListener('hashchange', () => { const h = parseHash(); if (h && (h.i !== S.i || h.step !== S.step)) { goto(h.i, h.step); broadcast(); } });
 }
 addEventListener('message', e => {
@@ -921,16 +1096,26 @@ async function init() {
   if (!deckBg || deckBg === 'rgba(0, 0, 0, 0)') deckBg = getComputedStyle(document.body).backgroundColor || '#fff';
   overlays();
   fit();
+  // Lay out every slide once, hidden: that requests every font the deck uses, so
+  // fonts.ready really means "all text is final" and setup code can measure text.
+  html.classList.add('dk-warm');
+  for (const s of slides) layerOn(s, true);
+  void deckEl.offsetHeight;
+  await document.fonts.ready;
   setupStage();
   for (const s of slides) {
     s.api = api;
     s.hook.setup?.(s.el, api);
   }
+  for (const n of deckEl.querySelectorAll('[data-fit]')) fitText(n);
+  for (const s of slides) layerOn(s, false);
+  html.classList.remove('dk-warm');
   for (const s of slides) {
     parseBuilds(s);
     s.entry = s.i === 0 ? .15 : trCfg(s, 1).dur * .55;
   }
-  addEventListener('resize', () => { fit(); if (overview) toggleOverview(true); });
+  let rz = 0;
+  addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { fit(); if (overview) toggleOverview(true); }); });
   const h = parseHash();
   goto(h ? h.i : 0, h ? h.step : 0);
   if (MODE === 'embed' && Q.has('rest')) show(S.i, S.step);
@@ -941,12 +1126,17 @@ async function init() {
   window.__draw = drawAt;
   if (MODE === 'presenter') presenterUI();
   if (MODE === 'live' || MODE === 'presenter') input();
+  controls();
+  if (Q.has('perf')) hud();
   html.classList.add('dk-ready');
   await document.fonts.ready;
   await Promise.all([...document.images].map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
   window.__ready = true;
   if (MODE === 'render' || MODE === 'presenter' || (MODE === 'embed' && Q.has('rest'))) return;
-  const loop = () => { if (!overview) frame(now()); requestAnimationFrame(loop); };
+  const loop = () => {
+    if (!overview) { const a = performance.now(); frame(now()); const ms = performance.now() - a; perf.ms = perf.ms * .9 + ms * .1; perf.worst = Math.max(perf.worst, ms); }
+    requestAnimationFrame(loop);
+  };
   requestAnimationFrame(loop);
 }
 
@@ -956,7 +1146,7 @@ const api = {
   slide(id, spec) { hooks[id] = spec; return api; },
   // Deck.stage({ setup(ctx), draw(ctx, S) }): canvas behind every slide
   stage(spec) { stageSpec = spec; return api; },
-  anim, transition, next, prev, goto,
+  anim, transition, next, prev, goto, toast,
   on(f) { listeners.push(f); return api; },
   get state() { return { i: S.i, step: S.step, count: slides.length }; },
   W, H, MODE, ease, clamp, lerp, seg, spring, rng, mix,

@@ -22,7 +22,9 @@ const HELP = `deck-kit export
   node deck.mjs gif    deck.html [out.gif]    animated GIF of the timeline  --from s --to s --fps 12 --width 960
                                               --hold 1.2  same hold for every step (short teasers; mp4 too)
   node deck.mjs mp4    deck.html [out.mp4]    MP4 of the timeline (needs ffmpeg)  --from --to --fps 30
-  node deck.mjs check  deck.html              lint rest frames: overflow, safe area, tiny text, overlaps, density
+  node deck.mjs check  deck.html              lint rest frames: overflow, text escaping its box, safe area, tiny text, overlaps
+                                              --timeline  also lint frames mid-animation   --no-webfonts  with fallback fonts
+  node deck.mjs perf   deck.html              cost of a frame per slide and per transition (script + style + layout)
   node deck.mjs bundle deck.html [out.html]   inline CDN scripts, stylesheets and Google Fonts: one offline file
 `;
 
@@ -33,7 +35,7 @@ const cmd = argv.shift();
 if (!cmd || cmd === '-h' || cmd === '--help') { console.log(HELP); process.exit(0); }
 
 const O = {
-  steps: flag('--steps'), raster: flag('--raster'), last: flag('--last'), jpg: flag('--jpg'), hold: opt('--hold', null),
+  steps: flag('--steps'), raster: flag('--raster'), last: flag('--last'), jpg: flag('--jpg'), nofonts: flag('--no-webfonts'), timeline: flag('--timeline'), hold: opt('--hold', null),
   cols: +opt('--cols', 5), slide: +opt('--slide', 2), frames: +opt('--frames', 8),
   from: +opt('--from', 0), to: opt('--to', null), fps: opt('--fps', null), width: +opt('--width', 960),
 };
@@ -54,6 +56,7 @@ async function open(scale = 1) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: scale });
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push(String(e)));
+  if (O.nofonts) await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await page.goto(pathToFileURL(inputAbs).href + '?render' + (O.hold ? `&hold=${O.hold}` : ''));
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
   const meta = await page.evaluate(() => ({ ...window.__meta, deck: window.__deck.slides, title: document.title }));
@@ -202,9 +205,50 @@ try {
       const tag = `${label(meta, st).padEnd(5)} ${meta.deck[st.i].id}`;
       for (const x of r) { x.level === 'error' ? errs++ : warns++; console.log(`${x.level === 'error' ? 'ERR ' : 'warn'}  ${tag}  ${x.kind}: ${x.msg}`); }
     }
+    if (O.timeline) {
+      // Mid-animation frames: things that are fine at rest can spill out while they move or count.
+      const tl = await page.evaluate(() => window.__deck.timeline()), seen = new Set();
+      for (const g of tl.segs.filter(x => x.kind === 'hold')) {
+        for (let dt = .15; dt < Math.min(g.dur, 3); dt += .15) {
+          await page.evaluate(T => window.__draw(T), g.t0 + dt);
+          for (const x of await page.evaluate(lint)) {
+            if (!/escapes-box|off-canvas|overflow/.test(x.kind)) continue;
+            const k = `${g.i}|${x.kind}|${x.msg.replace(/^"[^"]*"/, '')}`;   // one line per element, not per value if (seen.has(k)) continue; seen.add(k); errs++;
+            console.log(`ERR   ${`${g.i + 1}.${g.step}`.padEnd(5)} ${meta.deck[g.i].id}  ${x.kind} (while animating, +${(dt + (g.entry || 0)).toFixed(1)}s): ${x.msg}`);
+          }
+        }
+      }
+    }
     for (const [i, s] of meta.deck.entries()) if (!s.notes) { warns++; console.log(`warn  ${String(i + 1).padEnd(5)} ${s.id}  notes: slide has no speaker notes`); }
     done(`check: ${list.length} rest frames, ${errs} errors, ${warns} warnings`);
     process.exitCode = errs ? 1 : 0;
+  }
+
+  else if (cmd === 'perf') {
+    // Main-thread cost of one frame: the runtime's JS plus the style and layout it causes.
+    // Paint and compositing are not included; check heavy filters with ?perf in a real window.
+    const tl = await page.evaluate(() => window.__deck.timeline());
+    const rows = [];
+    for (const g of tl.segs) {
+      if (g.dur <= 0) continue;
+      const n = g.kind === 'tr' ? 10 : 8, span = g.kind === 'tr' ? g.dur : Math.min(g.dur, 2.4), ms = [];
+      for (let k = 0; k < n; k++) ms.push(await page.evaluate(T => { const a = performance.now(); window.__draw(T); void document.body.offsetHeight; return performance.now() - a; }, g.t0 + span * (k + .5) / n));
+      const info = await page.evaluate(() => { const l = document.querySelectorAll('.deck:not(.dk-print) .dk-layer.is-on'); let nodes = 0, filters = 0;
+        for (const x of l) { nodes += x.getElementsByTagName('*').length; for (const e of x.querySelectorAll('*')) if (e.style.filter && e.style.filter !== 'none') filters++; } return { nodes, filters }; });
+      ms.sort((a, b) => a - b);
+      rows.push({ what: g.kind === 'tr' ? `→ ${g.to.i + 1}  ${meta.deck[g.to.i].id}` : `${g.i + 1}.${g.step}  ${meta.deck[g.i].id}`, kind: g.kind,
+        med: ms[Math.floor(n / 2)], max: ms[n - 1], ...info });
+    }
+    let bad = 0;
+    console.log('frame cost, main thread (median / worst ms), DOM nodes on screen, live filters');
+    for (const r of rows) {
+      const flag = r.max > 16 ? 'ERR ' : r.max > 8 ? 'warn' : '    ';
+      if (r.max > 16) bad++;
+      console.log(`${flag}  ${r.what.padEnd(26)} ${r.med.toFixed(1).padStart(6)} / ${r.max.toFixed(1).padStart(6)} ms   ${String(r.nodes).padStart(5)} nodes${r.filters ? `   ${r.filters} filtered` : ''}`);
+    }
+    const worst = rows.reduce((a, b) => (b.max > a.max ? b : a));
+    done(`perf: ${rows.length} segments, worst ${worst.max.toFixed(1)} ms at ${worst.what.trim()}; budget 8 ms (warn), 16 ms (error)`);
+    process.exitCode = bad ? 1 : 0;
   }
 
   else throw new Error(`unknown command: ${cmd}`);
@@ -251,6 +295,51 @@ function lint() {
     const cs = getComputedStyle(el);
     if (/hidden|clip/.test(cs.overflow) && el.clientHeight > 0 && (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) && !el.matches('.slide,.dk-mask-i') && !el.closest('[data-bleed]'))
       add('error', 'overflow', `<${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''}> content is clipped`);
+  }
+  // Containment: text must stay inside the visible box it sits in (a card, a node, a pill),
+  // whether or not that box clips. HTML boxes are elements with a background or a border;
+  // in SVG, a rect or circle in the same group whose area holds the text's centre.
+  const isBox = e => {
+    if (!(e instanceof HTMLElement) || e.matches('.slide,.dk-layer')) return false;
+    const cs = getComputedStyle(e);
+    if (cs.display === 'inline' || cs.display === 'contents') return false;
+    const bg = !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor) || cs.backgroundImage !== 'none';
+    const bd = ['Top', 'Right', 'Bottom', 'Left'].some(s => parseFloat(cs[`border${s}Width`]) > 0 && cs[`border${s}Style`] !== 'none');
+    return bg || bd;
+  };
+  const tag = e => `<${e.tagName.toLowerCase()}${e.classList.length ? '.' + e.classList[0] : ''}>`;
+  const reported = new Set();
+  for (const { el, txt, r } of boxes) {
+    if (el.closest('[data-bleed]')) continue;
+    if (el instanceof SVGElement) {
+      const t = el.closest('text'); if (!t || reported.has(t)) continue;
+      const tb = t.getBoundingClientRect(), pad = tb.height * .2;
+      const cx = (tb.left + tb.right) / 2, cy = (tb.top + tb.bottom) / 2;
+      for (const s of t.parentNode.children) {
+        if (!/^(rect|circle)$/.test(s.tagName)) continue;
+        const sb = s.getBoundingClientRect();
+        if (cx < sb.left || cx > sb.right || cy < sb.top || cy > sb.bottom) continue;
+        let inside;
+        if (s.tagName === 'circle') {
+          const R = sb.width / 2, ox = (sb.left + sb.right) / 2, oy = (sb.top + sb.bottom) / 2;
+          inside = [[tb.left, tb.top + pad], [tb.right, tb.top + pad], [tb.left, tb.bottom - pad], [tb.right, tb.bottom - pad]].every(([x, y]) => Math.hypot(x - ox, y - oy) <= R + 1);
+        } else inside = tb.left >= sb.left - 1 && tb.right <= sb.right + 1 && tb.top + pad >= sb.top - 1 && tb.bottom - pad <= sb.bottom + 1;
+        if (!inside) { reported.add(t); add('error', 'escapes-box', `${short(txt)} spills out of its <${s.tagName}>`); }
+        break;
+      }
+      continue;
+    }
+    let b = el; while (b && b !== layer && !isBox(b)) b = b.parentElement;
+    if (!b || b === layer || reported.has(b)) continue;
+    const br = b.getBoundingClientRect(), cs = getComputedStyle(b);
+    const L = br.left + parseFloat(cs.borderLeftWidth), R = br.right - parseFloat(cs.borderRightWidth);
+    const T = br.top + parseFloat(cs.borderTopWidth), B = br.bottom - parseFloat(cs.borderBottomWidth);
+    if (r.left < L - 1 || r.right > R + 1 || r.top < T - 1 || r.bottom > B + 1) { reported.add(b); add('error', 'escapes-box', `${short(txt)} spills out of ${tag(b)}`); }
+  }
+  for (const b of layer.querySelectorAll('*')) {
+    if (!isBox(b) || alpha(b) < .05 || b.closest('[data-bleed]')) continue;
+    const r = b.getBoundingClientRect();
+    if (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1) add('error', 'off-canvas', `${tag(b)} extends past the slide edge (add data-bleed if intended)`);
   }
   if (words > 60) add('warn', 'density', `${words} words on screen (aim for under 40)`);
   return out;

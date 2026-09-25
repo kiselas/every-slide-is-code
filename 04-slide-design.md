@@ -77,6 +77,17 @@ Starting palettes (background, ink, muted, accent):
 - **Timeline / roadmap**: one axis, milestones per step.
 - **Ask**: the number, the use, the date.
 
+## Containment
+
+Text never leaves the box it sits in, in any frame and with any font:
+
+- Boxes that hold text have a fixed width and a **minimum** height; the content decides the rest.
+- Leave 10–15% slack. Webfonts can fail on corporate networks and the fallback is wider; `check --no-webfonts` shows what happens then.
+- Titles: `data-fit="2"` keeps them to two lines whatever font renders them.
+- Changing values are sized for their widest state: sign, all digits, the unit (`−0.000 kg`). Use tabular figures.
+- Labels on shapes (inside a bar, a node, a circle) are checked with the longest label; if it does not fit, put the label next to the shape.
+- `check` reports `escapes-box` (text outside a box with a background or border, or outside the SVG rect/circle it sits on) and `off-canvas` (a box past the slide edge). `check --timeline` repeats this on frames mid-animation.
+
 ## Imagery
 
 Everything should be drawn: SVG illustrations, HTML mock-ups of UI, charts. That keeps the deck one file, crisp at any size, animatable and exportable. When a real photo or screenshot is needed, embed it as a data URI or put it next to the deck and let `bundle` inline it. A photo covers the full slide or a clean crop of it; small photos in boxes read as clip art.
