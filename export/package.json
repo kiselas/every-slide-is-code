@@ -8,7 +8,9 @@
   "scripts": { "deck": "node deck.mjs" },
   "engines": { "node": ">=18" },
   "dependencies": {
+    "@capsizecss/metrics": "^4.3.0",
     "gifenc": "^1.0.3",
+    "jpeg-js": "^0.4.4",
     "playwright-core": "^1.45.0",
     "pngjs": "^7.0.0",
     "pptxgenjs": "^3.12.0"

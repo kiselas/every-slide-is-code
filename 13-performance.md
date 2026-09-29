@@ -45,3 +45,26 @@ node export/deck.mjs perf deck.html
 For every step and every transition, it reports the median and worst main-thread cost of a frame (the runtime's script plus the style and layout it causes), the number of DOM nodes on screen and the number of elements with a live filter. Budget: under 8 ms (a warning above), never over 16 ms (an error: that frame misses 60 fps on its own). Paint and compositing are not in this number; filters and huge images show up in `?perf` on a real screen.
 
 **Chrome DevTools, Performance panel**: record a transition with CPU throttling at 4×. That approximates an old office laptop.
+
+## Rendering GIF and MP4 (`export/deck.mjs`)
+
+`node export/deck.mjs mp4 deck.html part.mp4 --from 30 --to 40 --profile` prints the ten slowest frames by timecode (with slide and step) and the mean cost of a frame for every second of the timeline. The draw call of a deck is usually 1 to 5 ms; the capture is where the browser finishes the frame, so heavy filters, big blurs and large images show up there. On the demo, a GIF frame costs 1.4 ms of draw call, 68 ms of capture and 75 ms of GIF encoding.
+
+What changed in the exporter, on the demo deck, seconds 0 to 10 at 1080p (best of three runs on a shared machine with 20 logical CPUs; the ratios matter, not the seconds):
+
+| Step | MP4, 300 frames | GIF, 120 frames |
+|---|---|---|
+| before: `page.screenshot`, one process | 56.7 s | 15.1 s |
+| CDP `Page.captureScreenshot` (`optimizeForSpeed`), still one worker | 40.5 s | 10.7 s |
+| chunks on 4 browsers (the default), joined without re-encoding | 15.8 s | 6.4 s |
+| `--draft`, 4 workers (half size, half frame rate, JPEG, x264 veryfast / 63-colour GIF) | 5.4 s | 4.4 s |
+| `--draft`, 1 worker | 7.0 s | 4.5 s |
+
+- **Workers are limited by the GPU, not the cores.** The default is `min(4, max(1, cpus / 4))`. On the machine of the sister project (every-frame-is-code) 6 workers were the best of 2 to 12; here every run competed with other processes, so measure `--workers` once on yours.
+- **The output does not depend on the worker count.** Chunk boundaries are a function of the frame range only, so `--workers 1` and `--workers 4` produce the same frames in the same order. Checked on the first 4 seconds of the demo (MP4, GIF, and both with `--draft`) by comparing per-frame signatures (`--signatures`, `sigdiff`): 0 frames beyond tolerance. The frames themselves are not bit-identical from run to run, even with the same settings: the GPU rounds a few dozen pixels by 1 to 2 levels, and jumping straight to a time gives the same picture as playing up to it (checked at 16 points of the demo timeline, 0 to 138 pixels off by at most 2 levels).
+- **A capture after `__draw` needs no extra wait** in this pipeline: waiting for one or two animation frames or 400 ms did not change how often two renders of the same time differed, so the rest-frame double `requestAnimationFrame` is kept only where the deck switches state with `show()`.
+- **Start-up is a fixed cost.** Each browser loads the deck, lays out every slide and waits for the fonts: about 2 to 3 s here. That is why `--draft` gains less on a short range with many workers, and why `check` without `--timeline` uses one browser.
+- **PNG vs JPEG capture.** Full-size PNG (lossless, the default for the final render) costs about 130 ms a frame in one worker; half-size JPEG about 45 ms. Both end up as H.264 4:2:0, so use `--draft` to iterate and the default for the cut.
+- **The GIF encoder** stays single-pass per chunk, so each chunk starts with a full frame and a parallel GIF is a few KB larger per chunk than a serial one would be. Its palette is built from at most about 120,000 changed pixels (an even stride), which keeps a full-frame change cheap.
+
+To keep a deck cheap to render: every rule above (no layout reads in `frame`, small filters, few nodes) applies, because `__draw(T)` runs once per output frame in every worker.
