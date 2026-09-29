@@ -30,9 +30,31 @@ Presentation clickers send PgUp/PgDn or arrows, so they work as they are. Links,
 
 ## Presenter view
 
-**P** (or the button in the control bar) opens a second window: the current slide (live, with animations), the next state (as a rest frame), the speaker notes in large type, back/next buttons, the position ("4 / 15 · step 2 of 3"), a timer (click to reset) and the clock. Move it to your laptop screen and put the deck window fullscreen on the projector. Either window drives both.
+**P** (or the button in the control bar) opens a second window. Move it to your laptop screen and put the deck window fullscreen on the projector. Either window drives both.
 
-Notes come from `<aside class="notes">` inside each slide and can hold HTML: paragraphs, a bold number, a list of beats.
+| Where | What |
+|---|---|
+| left, top | the current state of the slide (live, with animations; your marks appear on it) |
+| left, bottom | the next state as a rest frame: the next click of this slide, or the next slide. The label says which |
+| right, big pane | the notes of this slide, split by click. The part you are speaking is lit and scrolled into view, what you have said is dimmed, what is ahead stays readable |
+| right, small pane | the notes of the next slide, under its title, so you can plan the hand-over |
+| header | timer (click to reset), position and title, dots for the clicks of the slide, `A−` `A+` for the size of the notes (remembered), back and next, the clock. It wraps on a narrow window instead of clipping |
+
+Under 900 px the panes stack and scroll. Labels follow `<html lang>` (English and Russian).
+
+**Notes by click.** Notes come from `<aside class="notes">` inside each slide and can hold HTML: paragraphs, a bold number, a list of beats. To tie a passage to a click, start it with one of:
+
+```html
+<aside class="notes">
+  <p>Said when the slide appears: the setup.</p>
+  <p data-step="1">Said on the first click.</p>      <!-- explicit: works for any number -->
+  <p>Still the first click: blocks belong to the marker above them.</p>
+  <p class="click">Said on the second click.</p>       <!-- the click after the previous marker -->
+  <p><b>▸ click.</b> Said on the third click.</p>      <!-- a block that starts with ▸ is a marker too -->
+</aside>
+```
+
+Blocks before the first marker belong to the slide itself (click 0). Markers beyond the number of clicks the slide really has merge into the last one, and a slide without markers shows one lit block. The PPTX export puts the whole text into the slide notes as before.
 
 ## Drawing on the slides
 

@@ -165,19 +165,33 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px sol
 /* presenter view */
 body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
 .dk-presenter .deck { display: none; }
-.dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
-.dk-pv header { display: flex; gap: 28px; align-items: baseline; padding: 14px 22px; border-bottom: 1px solid #2a2a2a; }
-.dk-pv-timer { font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
-.dk-pv-pos { flex: 1; color: #aaa; }
-.dk-pv header button { background: #262626; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 16px; cursor: pointer;
-  font: 600 15px/1 ui-sans-serif, system-ui, sans-serif; } .dk-pv header button:hover { background: #333; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
-.dk-pv main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding: 22px; min-height: 0; }
-.dk-pv aside { display: grid; grid-template-rows: auto 1fr; gap: 18px; min-height: 0; }
-.dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
-.dk-pv-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+.dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); --pv-fs: 26px; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.dk-pv header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 12px 22px; border-bottom: 1px solid #2a2a2a; }
+.dk-pv-timer { flex: none; font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dk-pv-pos { flex: 1 1 200px; min-width: 0; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-pv-pos b { color: #eee; font-weight: 600; margin-right: .8em; font-variant-numeric: tabular-nums; }
+.dk-pv-dots { display: flex; gap: 6px; flex: none; } .dk-pv-dots i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #666; box-sizing: border-box; } .dk-pv-dots i.on { background: #f0b429; border-color: #f0b429; }
+.dk-pv-fs { display: flex; gap: 4px; flex: none; }
+.dk-pv header button { flex: none; background: #262626; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  font: 600 15px/1 ui-sans-serif, system-ui, sans-serif; } .dk-pv header button:hover { background: #333; } .dk-pv-fs button { padding: 9px 11px; }
+.dk-pv-clock { flex: none; font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
+.dk-pv main { display: grid; grid-template-columns: minmax(0, 38fr) minmax(0, 62fr); gap: 22px; padding: 16px 22px 22px; min-height: 0; }
+.dk-pv-left { display: grid; align-content: start; gap: 12px; min-height: 0; min-width: 0; }
+.dk-pv-right { display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; min-height: 0; min-width: 0; }
+.dk-pv-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 5px; }
+.dk-pv-frame { position: relative; aspect-ratio: 16 / 9; width: min(100%, calc((100vh - 235px) / 2 * 16 / 9)); background: #000; border-radius: 6px; overflow: hidden; }
 .dk-pv-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
-.dk-pv-notes { overflow: auto; font-size: 24px; line-height: 1.45; color: #f2f2f2; padding-right: 8px; }
-.dk-pv-notes p { margin: 0 0 .7em; } .dk-pv-notes em { color: #777; }
+.dk-pv-notes { position: relative; flex: 1; min-height: 0; overflow: auto; font-size: var(--pv-fs); line-height: 1.45; color: #f2f2f2; padding-right: 10px; }
+.dk-pv-after { font-size: calc(var(--pv-fs) * .74); color: #b5b5b5; }
+.dk-pv-notes p { margin: 0 0 .65em; } .dk-pv-notes em, .dk-pv-none { color: #777; font-style: normal; }
+.dk-pv-seg { padding: .3em .7em .05em; margin: 0 0 .55em; border-left: 4px solid transparent; border-radius: 4px; }
+.dk-pv-seg.on { border-left-color: #f0b429; background: #1a1a1a; color: #fff; }
+.dk-pv-seg.done { opacity: .38; }
+.dk-pv-seg.todo { opacity: .78; }
+.dk-pv-tag { display: block; margin-bottom: .15em; font: 700 max(12px, .5em) ui-sans-serif, system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #f0b429; }
+.dk-pv-seg.done .dk-pv-tag, .dk-pv-seg.todo .dk-pv-tag { color: #999; }
+@media (max-width: 900px) { .dk-pv main { grid-template-columns: minmax(0, 1fr); overflow: auto; } .dk-pv-right { grid-template-rows: none; } .dk-pv-notes { max-height: 60vh; } .dk-pv-frame { width: 100%; } }
 
 /* print (vector PDF export) */
 .dk-printing, .dk-printing body { height: auto; overflow: visible; background: #fff; }
@@ -1336,9 +1350,11 @@ function applyBuild(b, st) {
   if (b.out === st.step) st._end = Math.max(st._end, e0 + b.outDelay + b.dur);
   if (b.dim === st.step) st._end = Math.max(st._end, e0 + .5);
   const lt = b.noIn ? Infinity : stepLT(b.step, st, b.delay);
-  let raw = seg(lt, 0, b.dur), leaving = false;
+  // t - delay - entry is not exactly dur when t = entry + delay + dur (float): a frame drawn at 0.9999999999 would be the last one, because the slide goes idle at t >= _end
+  const snap = p => (p > 1 - 1e-9 ? 1 : p);
+  let raw = snap(seg(lt, 0, b.dur)), leaving = false;
   if (b.out != null) {
-    const ro = seg(stepLT(b.out, st, b.outDelay), 0, b.dur);
+    const ro = snap(seg(stepLT(b.out, st, b.outDelay), 0, b.dur));
     if (ro > 0) { leaving = true; raw = Math.min(raw, 1 - ro); }
   }
   const e = b.curve(raw);
@@ -1800,16 +1816,47 @@ function nextState(i, step) {
   if (i < slides.length - 1) return { i: i + 1, step: 0 };
   return null;
 }
+const PV_TX = {
+  en: { now: 'This slide', next: 'Next', slide: 'Slide', click: 'Click', after: 'Next slide', none: 'No notes for this slide.', end: 'End of the deck',
+    back: '‹ Back', fwd: 'Next ›', reset: 'Click to reset the timer', fsm: 'Smaller notes text', fsp: 'Larger notes text', of: 'of', lastSlide: 'This is the last slide' },
+  ru: { now: 'Этот слайд', next: 'Дальше', slide: 'Слайд', click: 'Клик', after: 'Следующий слайд', none: 'К этому слайду нет заметок.', end: 'Конец презентации',
+    back: '‹ Назад', fwd: 'Вперёд ›', reset: 'Клик — сбросить таймер', fsm: 'Мельче текст заметок', fsp: 'Крупнее текст заметок', of: 'из', lastSlide: 'Это последний слайд' },
+};
+// Speaker notes by step. A block of the notes opens the text for step N when it has data-step="N", the class "click",
+// or starts with the marker ▸ (then it is the step after the previous one). Blocks before the first marker are step 0.
+// More markers than steps merge into the last step, so the presenter view never invents a state the slide does not have.
+function noteSegs(s) {
+  const box = document.createElement('div'); box.innerHTML = s.notes || '';
+  const segs = []; let cur, step = 0;
+  const open = n => { step = Math.max(0, Math.min(s.steps, n)); cur = segs.find(g => g.step === step); if (!cur) { cur = { step, html: '' }; segs.push(cur); } };
+  open(0);
+  for (const n of box.childNodes) {
+    const isEl = n.nodeType === 1;
+    if (!isEl && !n.textContent.trim()) continue;
+    if (isEl && n.dataset.step) open(+n.dataset.step);
+    else if (isEl && (n.classList.contains('click') || /^\s*▸/.test(n.textContent))) open(step + 1);
+    if (isEl) cur.html += n.outerHTML; else { const p = document.createElement('p'); p.textContent = n.textContent.trim(); cur.html += p.outerHTML; }
+  }
+  return segs.filter(g => g.html).sort((a, b) => a.step - b.step);
+}
 function presenterUI() {
   const base = location.href.split('#')[0].split('?')[0];
+  const T = PV_TX[/^ru/i.test(document.documentElement.lang) ? 'ru' : 'en'];
   document.body.classList.add('dk-presenter');
   const ui = el('div', { class: 'dk-pv', html: `
-    <header><span class="dk-pv-timer" title="click to reset">00:00</span><span class="dk-pv-pos"></span>
-      <button data-pv="prev" aria-label="Back">‹ Back</button><button data-pv="next" aria-label="Next">Next ›</button><span class="dk-pv-clock"></span></header>
+    <header><span class="dk-pv-timer" title="${T.reset}">00:00</span>
+      <span class="dk-pv-pos"><b></b><span></span></span><span class="dk-pv-dots"></span>
+      <span class="dk-pv-fs"><button data-pv="fs-" aria-label="${T.fsm}" title="${T.fsm}">A−</button><button data-pv="fs+" aria-label="${T.fsp}" title="${T.fsp}">A+</button></span>
+      <button data-pv="prev" aria-label="${T.back}">${T.back}</button><button data-pv="next" aria-label="${T.fwd}">${T.fwd}</button><span class="dk-pv-clock"></span></header>
     <main>
-      <section class="dk-pv-cur"><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
-      <aside><div class="dk-pv-next"><label>Next</label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></div>
-        <div class="dk-pv-notes"></div></aside>
+      <div class="dk-pv-left">
+        <section class="dk-pv-cur"><label>${T.now}</label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
+        <section class="dk-pv-next"><label class="dk-pv-nl"></label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
+      </div>
+      <div class="dk-pv-right">
+        <section class="dk-pv-pane"><label>${T.now}</label><div class="dk-pv-notes dk-pv-now"></div></section>
+        <section class="dk-pv-pane"><label class="dk-pv-al"></label><div class="dk-pv-notes dk-pv-after"></div></section>
+      </div>
     </main>` }, document.body);
   const [cur, nxt] = ui.querySelectorAll('iframe');
   cur.src = `${base}?embed#${S.i + 1}.${S.step}`;
@@ -1818,27 +1865,57 @@ function presenterUI() {
     cur.addEventListener('load', () => { if (marks.size) post(cur.contentWindow, { a: 'snap', marks: [...marks] }); });
     post(window.opener, { a: 'hello' });
   }
-  const timer = ui.querySelector('.dk-pv-timer'), pos = ui.querySelector('.dk-pv-pos'), clock = ui.querySelector('.dk-pv-clock'), notes = ui.querySelector('.dk-pv-notes');
+  const q = s => ui.querySelector(s);
+  const timer = q('.dk-pv-timer'), clock = q('.dk-pv-clock'), posN = q('.dk-pv-pos b'), posT = q('.dk-pv-pos span'), dots = q('.dk-pv-dots'),
+    nowBox = q('.dk-pv-now'), afterBox = q('.dk-pv-after'), nl = q('.dk-pv-nl'), al = q('.dk-pv-al');
   let t0 = Date.now();
   timer.onclick = () => { t0 = Date.now(); };
-  ui.querySelector('[data-pv=prev]').onclick = () => { prev(); broadcast(); };
-  ui.querySelector('[data-pv=next]').onclick = () => { next(); broadcast(); };
+  q('[data-pv=prev]').onclick = () => { prev(); broadcast(); };
+  q('[data-pv=next]').onclick = () => { next(); broadcast(); };
+  let fs = 26; try { fs = +localStorage.getItem('dk-pv-fs') || fs; } catch (e) { /* storage blocked */ }
+  const setFs = v => { fs = Math.max(16, Math.min(56, v)); ui.style.setProperty('--pv-fs', fs + 'px'); try { localStorage.setItem('dk-pv-fs', fs); } catch (e) { /* storage blocked */ } };
+  q('[data-pv="fs-"]').onclick = () => setFs(fs - 2);
+  q('[data-pv="fs+"]').onclick = () => setFs(fs + 2);
+  setFs(fs);
   const two = n => String(n).padStart(2, '0');
   setInterval(() => {
     const e = Math.floor((Date.now() - t0) / 1000);
     timer.textContent = `${two(Math.floor(e / 60))}:${two(e % 60)}`;
     const d = new Date(); clock.textContent = `${two(d.getHours())}:${two(d.getMinutes())}`;
   }, 250);
-  let nxtKey = '';
+  const tag = g => (g.step ? `${T.click} ${g.step}` : T.slide);
+  const fill = (box, segs, empty) => {
+    box.textContent = ''; box.scrollTop = 0;
+    if (!segs.length) { box.append(el('p', { class: 'dk-pv-none', html: empty })); return []; }
+    return segs.map(g => el('div', { class: 'dk-pv-seg', html: (segs.length > 1 ? `<span class="dk-pv-tag">${tag(g)}</span>` : '') + g.html, 'data-step': g.step }, box));
+  };
+  let nowI = -1, nowSegs = [], nxtKey = '', afterI = -2, lastOn = -2;
   const refresh = () => {
     const s = slides[S.i], n = nextState(S.i, S.step);
-    pos.textContent = `${S.i + 1} / ${slides.length}${s.steps ? ` · step ${S.step + 1} of ${s.steps + 1}` : ''} · ${s.title}`;
-    notes.innerHTML = s.notes || '<em>No notes for this slide.</em>';
+    posN.textContent = `${S.i + 1} / ${slides.length}`; posT.textContent = s.title;
+    dots.innerHTML = s.steps ? Array.from({ length: s.steps + 1 }, (_, k) => `<i class="${k <= S.step ? 'on' : ''}"></i>`).join('') : '';
+    dots.title = s.steps ? `${T.click} ${S.step} ${T.of} ${s.steps}` : '';
+    if (nowI !== S.i) { nowI = S.i; lastOn = -2; nowSegs = fill(nowBox, noteSegs(s), T.none); }
+    let on = -1;   // the text being spoken now: the last segment that has started
+    nowSegs.forEach((e, k) => { if (+e.dataset.step <= S.step) on = k; });
+    nowSegs.forEach((e, k) => { e.className = 'dk-pv-seg ' + (k < on ? 'done' : k === on ? 'on' : 'todo'); });
+    if (nowSegs.length > 1 && on !== lastOn) {
+      lastOn = on;
+      const target = on >= 0 ? nowSegs[on] : null;
+      nowBox.scrollTo({ top: target ? Math.max(0, target.offsetTop - 6) : 0, behavior: 'smooth' });
+    }
+    const ns = slides[S.i + 1];
+    if (afterI !== S.i) {
+      afterI = S.i;
+      al.textContent = ns ? `${T.after} · ${S.i + 2} · ${ns.title}` : T.lastSlide;
+      fill(afterBox, ns ? noteSegs(ns) : [], ns ? T.none : T.end);
+    }
     const key = n ? `${n.i + 1}.${n.step}` : 'end';
+    nl.textContent = !n ? T.end : n.i === S.i ? `${T.next} · ${T.click} ${n.step}` : `${T.next} · ${T.slide} ${n.i + 1}`;
     if (key !== nxtKey) {
       nxtKey = key;
       if (n) { nxt.removeAttribute('srcdoc'); nxt.src = `${base}?embed&rest#${key}`; }
-      else nxt.srcdoc = '<body style="margin:0;height:100vh;display:grid;place-items:center;background:#000;color:#777;font:24px system-ui">End of deck</body>';
+      else nxt.srcdoc = `<body style="margin:0;height:100vh;display:grid;place-items:center;background:#000;color:#777;font:24px system-ui">${T.end}</body>`;
     }
     post(cur.contentWindow, { i: S.i, step: S.step });
   };

@@ -262,7 +262,7 @@ test('skeleton: one section per row, in the template markup, with TODO markers',
   assert.match(sections[4], /data-transition="tear"/);
   assert.match(sections[5], /data-transition="morph"/);
   assert.match(html, /<div class="deck" data-transition="camera"/);
-  assert.equal((html.match(/data-step="\d+"/g) || []).length, s.rows.reduce((a, r) => a + r.steps, 0));
+  assert.equal((html.match(/data-step="\d+"/g) || []).length, 2 * s.rows.reduce((a, r) => a + r.steps, 0), 'each click is a build on the slide and a note stub for the presenter view');
   assert.match(html, /<h1 class="sk"[^>]*>Restaurants/); assert.match(html, /<h1 class="sk"[^>]*>We are raising/);
   assert.match(html, /<title>Tare, a seed pitch/);
   assert.match(html, /Source: TODO/);

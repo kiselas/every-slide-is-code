@@ -473,3 +473,48 @@ if (!only || 'template'.includes(only)) {
   console.log(`live annotation\n${A.lines.join('\n') || '  all passed'}\n  ${A.checks} checks, ${A.fails.length} failed\n`);
   if (A.fails.length) { console.error('\nFAILED:\n - ' + A.fails.join('\n - ')); process.exitCode = 1; }
 }
+
+/* ───────────────────────── presenter view (11-presenting.md) ─────────────────────────
+ * Notes are split by step (data-step, .click, or a leading ▸), the segment being spoken is marked and scrolled into view, the notes
+ * of the next slide sit beside it, and the header never leaves the window. Runs on a template copy with step notes. */
+if (!only || 'template'.includes(only)) {
+  const P = reporter('presenter view'), pb = await chromium.launch({ ...launch, args: ['--force-color-profile=srgb', '--disable-lcd-text'] });
+  const fx = path.join(os.tmpdir(), `deck-kit-presenter-${process.pid}.html`);
+  try {
+    const html = read('template/deck.html').replace(/(<section class="slide" id="agenda">[\s\S]*?)<aside class="notes">[\s\S]*?<\/aside>/,
+      '$1<aside class="notes"><p>Intro before any click.</p>' + '<p>A long introduction, so the notes have to scroll.</p>'.repeat(14) + '<p data-step="1">Point one.</p><p>More on point one.</p><p class="click">Point two.</p><p>▸ Point three, by the marker.</p><p>▸ A marker too many.</p></aside>');
+    fs.writeFileSync(fx, html);
+    const view = async (w, h, hash) => {
+      const c = await pb.newContext({ viewport: { width: w, height: h } }); await c.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+      const p = await open(c, url(fx, '?presenter' + hash), { ready: false }); await p.waitForSelector('.dk-pv-seg'); await p.waitForTimeout(900);
+      return { c, p };
+    };
+    const segs = p => p.evaluate(() => [...document.querySelectorAll('.dk-pv-now .dk-pv-seg')].map(e => `${e.dataset.step}:${e.className.replace('dk-pv-seg ', '')}`).join(' '));
+    let { c, p } = await view(1400, 860, '#2.0');
+    P.need(await segs(p) === '0:on 1:todo 2:todo 3:todo', `step 0: the intro is being spoken, the clicks are ahead (${await segs(p)})`);
+    P.need(await p.evaluate(() => document.querySelectorAll('.dk-pv-now .dk-pv-seg').length) === 4, 'data-step, .click and ▸ open segments; a marker too many merges into the last step');
+    await p.keyboard.press('ArrowRight'); await p.keyboard.press('ArrowRight'); await p.waitForTimeout(1000);
+    P.need(await segs(p) === '0:done 1:done 2:on 3:todo', `step 2: earlier text is done, click 2 is on (${await segs(p)})`);
+    P.need(await p.evaluate(() => { const b = document.querySelector('.dk-pv-now'), e = b.querySelector('.on'), r = b.getBoundingClientRect(), q = e.getBoundingClientRect(); return q.top >= r.top - 2 && q.bottom <= r.bottom + 2; }), 'the segment being spoken is scrolled fully into view (the notes are long)');
+    P.need(await p.evaluate(() => document.querySelectorAll('.dk-pv-dots i.on').length) === 3, 'the step dots show the position (3 of 4 filled at step 2)');
+    P.need(await p.evaluate(() => /\b3\b/.test(document.querySelector('.dk-pv-al').textContent) && document.querySelector('.dk-pv-after').textContent.trim().length > 20), 'the notes of the next slide are shown under its title');
+    P.need(await p.evaluate(() => /Click 3/.test(document.querySelector('.dk-pv-nl').textContent)), 'the preview label says which state comes next (Click 3)');
+    const fs0 = await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.dk-pv-now')).fontSize));
+    await p.click('[data-pv="fs+"]');
+    P.need(await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.dk-pv-now')).fontSize)) > fs0, 'A+ makes the notes larger');
+    await p.click('[data-pv="next"]'); await p.waitForTimeout(400);
+    P.need(await segs(p) === '0:done 1:done 2:done 3:on', 'the Next button in the presenter window moves to click 3');
+    P.need(!p.errors.length, `no page errors (${p.errors[0] || ''})`);
+    await c.close();
+    for (const [w, h] of [[2000, 1000], [1400, 860], [1000, 700], [760, 700]]) {
+      ({ c, p } = await view(w, h, '#2.1'));
+      const bad = await p.evaluate(() => [...document.querySelectorAll('.dk-pv header > *')].filter(e => { const b = e.getBoundingClientRect(); return b.right > innerWidth + 1 || b.left < -1; }).map(e => e.className || e.tagName));
+      P.need(!bad.length, `${w}x${h}: nothing in the header leaves the window (${bad.join(', ')})`);
+      P.need(await p.evaluate(() => { const r = document.querySelector('.dk-pv-cur .dk-pv-frame').getBoundingClientRect(), n = document.querySelector('.dk-pv-next .dk-pv-frame').getBoundingClientRect(); return r.width > 200 && n.width > 200 && (innerWidth < 900 || (r.bottom <= innerHeight && n.bottom <= innerHeight)); }), `${w}x${h}: both previews are visible and inside the window`);
+      await c.close();
+    }
+  } catch (e) { P.need(false, `the presenter check itself crashed: ${e.stack || e}`); }
+  await pb.close(); fs.rmSync(fx, { force: true });
+  console.log(`presenter view\n${P.lines.join('\n') || '  all passed'}\n  ${P.checks} checks, ${P.fails.length} failed\n`);
+  if (P.fails.length) { console.error('\nFAILED:\n - ' + P.fails.join('\n - ')); process.exitCode = 1; }
+}

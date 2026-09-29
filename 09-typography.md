@@ -98,4 +98,4 @@ A statement is one claim in two beats: a small setup line, then the payoff, larg
 
 ## Speaker notes
 
-Notes are text too, and presenter view shows them at 24 px. Write them as you would say them: short paragraphs, the transition line to the next slide at the end.
+Notes are text too, and presenter view shows them at 26 px (`A−`/`A+` change that). Write them as you would say them: short paragraphs, the transition line to the next slide at the end. Tie a passage to a click with `data-step="N"`, `class="click"` or a leading ▸; presenter view lights the passage of the current click (11-presenting.md).

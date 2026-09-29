@@ -525,7 +525,8 @@ export function skeleton(script, templateHtml) {
     }
     for (let s = 1; s <= r.steps; s++) L.push(`    <p class="lede sk" data-step="${s}" data-anim="rise">${esc(r.stepTexts[s - 1] || `TODO step ${s}`)}</p>`);
     if (kinds.some(x => x === 'chart' || x === 'number')) L.push(`    <p class="foot" data-anim="fade">Source: TODO (unit, period, source)</p>`);
-    L.push(`    <aside class="notes"><p>${esc(r.note || 'TODO: what you say here, in full sentences.')}</p></aside>`);
+    const stepNotes = Array.from({ length: r.steps }, (_, k) => `<p data-step="${k + 1}">TODO: what you say at click ${k + 1}.</p>`).join('');   // presenter view shows the text of the click being spoken (11-presenting.md)
+    L.push(`    <aside class="notes"><p>${esc(r.note || 'TODO: what you say here, in full sentences.')}</p>${stepNotes}</aside>`);
     L.push('  </section>');
     if (kinds.some(x => x === 'chart' || x === 'diagram' || x === 'code' || x === 'number')) {
       stubs.push(`// ${r.index}. ${r.visual.raw}\n// Deck.slide('${id}', {\n//   steps: ${r.steps},\n//   setup(el, D) { /* build the SVG once */ },\n//   frame(el, st) { /* set attributes from st, every frame */ },\n// });`);
