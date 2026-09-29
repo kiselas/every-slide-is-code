@@ -850,7 +850,9 @@ transition('camera', { dur: 1.3, fn(A, B, p, o) {
   o.cam = cam;
   for (const [L, s] of [[A, o.from], [B, o.to]]) {
     L.style.transformOrigin = '0 0';
-    L.style.transform = `${tr((s.pos.x - cam.x) / cam.s * W, (s.pos.y - cam.y) / cam.s * H)} scale(${s.pos.s / cam.s})`;
+    // rounded: cx - cs/2 leaves float dust (575.9999999999 px), and a raster that floors it moves the text a whole pixel at p = 0 and p = 1
+    const r3 = v => Math.round(v * 1000) / 1000;
+    L.style.transform = `${tr(r3((s.pos.x - cam.x) / cam.s * W), r3((s.pos.y - cam.y) / cam.s * H))} scale(${Math.round(s.pos.s / cam.s * 1e5) / 1e5})`;
   } } });
 
 /* Cinematic set, ported from the film runtime (every-frame-is-code). Same rule as everything else: each one is a pure
