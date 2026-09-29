@@ -13,14 +13,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const css = fs.readFileSync(path.join(root, 'runtime/deck.css'), 'utf8').trim();
 const js = fs.readFileSync(path.join(root, 'runtime/deck.js'), 'utf8').trim().replace(/<\/script/gi, '<\\/script');
 
-// Optional plugin (14-code-slides.md): synced only into decks that carry its slots,
-// <style id="deck-kit-code-css"></style> and <script id="deck-kit-code-js"></script>.
+// Optional plugins: runtime/<name>.js and runtime/<name>.css, synced only into decks that carry their slots,
+// <style id="deck-kit-<name>-css"></style> and <script id="deck-kit-<name>-js"></script> (either slot may be absent).
+// Adding a plugin is one line here. 14-code-slides.md: code. 15-sketch-and-morph.md: sketch.
+const PLUGINS = ['code', 'sketch'];
 const plugin = (file, tx = s => s) => {
   const p = path.join(root, 'runtime', file);
   return fs.existsSync(p) ? tx(fs.readFileSync(p, 'utf8').trim()) : null;
 };
-const codeCss = plugin('code.css');
-const codeJs = plugin('code.js', s => s.replace(/<\/script/gi, '<\\/script'));
+const plugins = PLUGINS.map(name => ({ name, css: plugin(`${name}.css`), js: plugin(`${name}.js`, s => s.replace(/<\/script/gi, '<\\/script')) }));
 
 const args = process.argv.slice(2);
 // --code-cache deck.html: run the deck once (needs export/ installed and network for Shiki), and store the highlighted
@@ -61,8 +62,10 @@ for (const f of files) {
   const before = h;
   h = h.replace(/<style id="deck-kit-css">[\s\S]*?<\/style>/, () => `<style id="deck-kit-css">\n${css}\n</style>`);
   h = h.replace(/<script id="deck-kit-js">[\s\S]*?<\/script>/, () => `<script id="deck-kit-js">\n${js}\n</script>`);
-  if (codeCss != null) h = h.replace(/<style id="deck-kit-code-css">[\s\S]*?<\/style>/, () => `<style id="deck-kit-code-css">\n${codeCss}\n</style>`);
-  if (codeJs != null) h = h.replace(/<script id="deck-kit-code-js">[\s\S]*?<\/script>/, () => `<script id="deck-kit-code-js">\n${codeJs}\n</script>`);
+  for (const { name, css: pc, js: pj } of plugins) {
+    if (pc != null) h = h.replace(new RegExp(`<style id="deck-kit-${name}-css">[\\s\\S]*?</style>`), () => `<style id="deck-kit-${name}-css">\n${pc}\n</style>`);
+    if (pj != null) h = h.replace(new RegExp(`<script id="deck-kit-${name}-js">[\\s\\S]*?</script>`), () => `<script id="deck-kit-${name}-js">\n${pj}\n</script>`);
+  }
   if (!/id="deck-kit-js"/.test(h)) { console.warn(`skip ${f}: no <script id="deck-kit-js"> slot`); continue; }
   fs.writeFileSync(f, h);
   console.log(`${h === before ? 'up to date' : 'synced    '}  ${path.relative(process.cwd(), f)}`);
