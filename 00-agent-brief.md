@@ -65,3 +65,6 @@ Short rules. The details are in the neighbouring files.
 40. Code slides: 8-15 lines per state, 24 px minimum, states or line focus instead of scrolling; run `--code-cache` before `bundle` (14-code-slides.md).
 41. Kinetic text (`chars`, `tracking`, `scramble`, `flip`) and the statement grammar (`data-say`: setup small, payoff large, at most 8 words) only where the wording carries the meaning. Grain and other ambient effects are optional, frozen in exports, and must not keep still slides from going idle (`Deck.fx`, 10-stage.md).
 42. After runtime or transition changes run `npm test` and `npm run test:browser`: determinism, transition end frames, no `Math.random`, idle rendering.
+43. Sketch plugin: sketched shapes are drawn once from a seed (never `Math.random`), line boil runs only while the slide is live, morphing shapes stay clean (15-sketch-and-morph.md).
+44. Live annotation (`D` pen, `H` highlighter, `L` laser, `E` erase) exists only in live and presenter windows, never in exports; `data-annotate="off"` on `.deck` turns it off for kiosks (11-presenting.md).
+45. Start a palette from `scripts/palette.mjs` when no style is given; `check` flags text under 3:1 as an error and under the norm as a warning, so fix warnings before handing over (04-slide-design.md).
