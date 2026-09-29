@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 OUT="${1:-deck-kit.zip}"
 git archive --format=zip --prefix=deck-kit/ -o "$OUT" HEAD \
   SKILL.md LICENSE sources.md [0-9][0-9]-*.md \
-  runtime/deck.js runtime/deck.css template/deck.html scripts/sync-runtime.mjs \
+  runtime/deck.js runtime/deck.css runtime/code.js runtime/code.css \
+  template/deck.html template/SCRIPT.md scripts/sync-runtime.mjs scripts/plan.mjs \
   export/README.md export/package.json export/deck.mjs
 echo "skill archive: $OUT"

@@ -16,7 +16,8 @@ description: Presentation decks as code — pitch decks, product launches, idea 
    - titles, big numbers, text treatment: `09-typography.md`;
    - a background world that lives behind all slides: `10-stage.md`;
    - rehearsal, presenter view, the room: `11-presenting.md`;
-   - smoothness, battery, heavy slides: `13-performance.md`.
+   - smoothness, battery, heavy slides: `13-performance.md`;
+   - technical talks, code on slides (magic move, line focus, diffs): `14-code-slides.md` (optional plugin `runtime/code.js`).
 3. Start every deck from `template/deck.html` (`node scripts/sync-runtime.mjs --new my-deck.html`), or copy the template and paste `runtime/deck.css` and `runtime/deck.js` into its two marked slots.
-4. Show the plan as data first: the storyline (one sentence per slide), the style, and which slides carry a chart, a diagram or a transition with a meaning. Then write code.
-5. After every version run `node export/deck.mjs check` and `node export/deck.mjs sheet`, look at the sheet yourself and fix by slide and step number (`4.1`, not "the chart slide"). Before handing over, also run `check --timeline`, `check --no-webfonts` and `perf`.
+4. Show the plan as data first: the storyline (one sentence per slide), the style, and which slides carry a chart, a diagram or a transition with a meaning. Then write code. For a talk of 8+ minutes, write `SCRIPT.md` (`template/SCRIPT.md`) first, run `node scripts/plan.mjs SCRIPT.md --check` and `--animatic`, wait for approval, then `--new deck.html` (03-story.md).
+5. After every version run `node export/deck.mjs check` and `node export/deck.mjs sheet`, look at the sheet yourself and fix by slide and step number (`4.1`, not "the chart slide"). Before handing over, also run `check --timeline`, `check --no-webfonts` and `perf`. To look at the exact frame a finding names, use `still 6.2@0.45`; `mp4`/`gif` take `--draft` and `--workers N`; `fonts --write` adds metric-matched fallback fonts (12-export-qa.md).
