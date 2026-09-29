@@ -228,7 +228,7 @@ async function hashJump(T, deck, info) {
     try {
       const page = await open(ctx, url(deck.file, hash), { clock: true });
       await page.addStyleTag({ content: UI_OFF });       // the control bar and hints fade with CSS transitions the fake clock does not drive
-      await page.clock.runFor(4000);
+      await page.clock.runFor(8000);   // performance.now keeps the real load time, so a slow machine reaches T later: step-0 builds must have finished on both jumps
       const png = await shot(page), state = await page.evaluate(() => Deck.state), sigs = await page.evaluate(SIGS);
       await page.clock.runFor(1000);
       const later = await page.evaluate(SIGS);
