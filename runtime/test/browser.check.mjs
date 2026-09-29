@@ -145,7 +145,10 @@ const QUIRKS = {
   cover: { first: 'the incoming card is off screen at p=0, but its 80 px box-shadow already darkens the right edge for one frame' },
   whip: { first: AA },
   punch: { first: AA },
-  camera: { first: 'the layers are composited from the first frame, and on Linux Chrome the glyphs of a composited layer sit at other subpixel positions (whole slide differs at the edges of letters, contents do not move)' },
+  camera: {
+    first: 'the layers are composited from the first frame, and on Linux Chrome the glyphs of a composited layer sit at other subpixel positions (whole slide differs at the edges of letters, contents do not move)',
+    final: 'same as the first frame, in reverse: the last composited frame against the destination rest frame; the same commit passed one CI run and failed the other, so it is renderer noise at letter edges',
+  },
 };
 const pct = f => (f * 100).toFixed(2) + '%';
 const TOL = 0.002;                                          // a few blocks of 2040: "the same picture"
