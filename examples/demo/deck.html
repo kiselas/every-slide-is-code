@@ -26,6 +26,28 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-let
 .dk-strike { background-image: linear-gradient(transparent 50%, var(--dk-strike, currentColor) 50%, var(--dk-strike, currentColor) calc(50% + .08em), transparent calc(50% + .08em));
   background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 
+/* kinetic text: chars, tracking, scramble (characters in nowrap words), flip (split-flap). Metrics are fixed in init; nothing reflows. */
+.dk-w { display: inline-block; white-space: nowrap; }
+.dk-c { display: inline-block; white-space: pre; }
+.dk-scr .dk-c { text-align: center; }
+.dk-flip { display: inline-block; position: relative; white-space: nowrap; vertical-align: baseline; }
+.dk-fl { position: absolute; left: 0; right: 0; top: 0; visibility: hidden; transform-origin: 50% 50%; backface-visibility: hidden; }
+.dk-fl-t { clip-path: inset(-40% -10% 50% -10%); }
+.dk-fl-b { clip-path: inset(50% -10% -40% -10%); }
+.dk-fl-h { top: 50%; height: 0; border-top: 2px solid currentColor; clip-path: none; }
+
+/* statements: data-say="Setup:|*payoff*" (or Deck.say). The element's font size is the payoff; theme with the custom properties. */
+.dk-say { text-wrap: balance; }
+.dk-say .say-s { display: block; margin: 0 0 var(--dk-say-gap, .16em); font-size: max(var(--dk-say-setup-size, .36em), 26px); line-height: 1.2;
+  font-weight: var(--dk-say-setup-weight, inherit); letter-spacing: var(--dk-say-setup-tracking, .02em); text-transform: var(--dk-say-setup-transform, none);
+  font-family: var(--dk-say-setup-font, inherit); color: var(--dk-say-setup, var(--muted, inherit)); }
+.dk-say .pay { display: block; font-style: normal; font-size: var(--dk-say-pay-size, 1em); line-height: var(--dk-say-pay-lh, 1.02);
+  font-weight: var(--dk-say-pay-weight, inherit); color: var(--dk-say-pay, var(--accent, currentColor)); }
+/* the small caption under a claim: a source or the arithmetic behind it */
+.proof { margin: .9em 0 0; max-width: var(--dk-proof-width, 62ch); font-size: var(--dk-proof-size, 26px); line-height: 1.35; letter-spacing: .01em;
+  font-family: var(--dk-proof-font, inherit); color: var(--dk-proof, var(--muted, inherit)); font-variant-numeric: tabular-nums; }
+
+.dk-fx { position: absolute; inset: 0; z-index: 51; display: none; pointer-events: none; }
 .dk-morph { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
 .dk-morph > * { will-change: transform, opacity; }
 .dk-veil { position: absolute; inset: 0; z-index: 50; pointer-events: none; opacity: 0; }
@@ -426,6 +448,12 @@ function rng(seed = 1) {
   let a = seed | 0;
   return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
+// Stateless integer hash → 0..1: the same (a, b, c) always gives the same number, in any order of calls.
+function ihash(a, b = 0, c = 0) {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 2246822519);
+  h = Math.imul(h ^ h >>> 13, 1274126177);
+  return ((h ^ h >>> 16) >>> 0) / 4294967296;
+}
 
 /* ───────────────────────── config ───────────────────────── */
 const deckEl = document.querySelector('.deck');
@@ -521,6 +549,182 @@ anim('strike', { dur: .5, curve: ease.inOutCubic,
   init(el) { el.classList.add('dk-strike'); },
   f(el, e) { el.style.backgroundSize = `${e * 100}% 100%`; return {}; } });
 
+/* ───────────────────────── kinetic text: chars, tracking, scramble, flip ─────────────────────────
+ * The text is split once in init (measured there, never inside a frame). The real sentence goes to
+ * aria-label and every character is aria-hidden; at rest the inline styles are gone and the layout is the authored one.
+ * Anims with `stagger: true` handle data-stagger themselves (it is the gap between characters, not a group of children). */
+function splitText(node) {
+  const k = fitKLive(), text = node.textContent.replace(/\s+/g, ' ').trim(), nodes = [], tw = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode());) if (n.nodeValue.trim()) nodes.push(n);
+  const rg = document.createRange();
+  const before = nodes.map(n => {                     // the natural box of every character, before it gets its own span
+    const out = []; let i = 0;
+    for (const ch of n.nodeValue) { rg.setStart(n, i); rg.setEnd(n, i + ch.length); const r = rg.getBoundingClientRect(); out.push({ l: r.left / k, t: r.top / k }); i += ch.length; }
+    return out;
+  });
+  const chars = [];
+  nodes.forEach((n, ni) => {
+    const frag = document.createDocumentFragment(); let ci = 0;
+    for (const tok of n.nodeValue.split(/(\s+)/)) {
+      if (!tok) continue;
+      if (/^\s+$/.test(tok)) { frag.append(tok); ci += [...tok].length; continue; }
+      const w = document.createElement('span'); w.className = 'dk-w'; let prev = null;
+      for (const ch of tok) {
+        const s = document.createElement('span'); s.className = 'dk-c'; s.setAttribute('aria-hidden', 'true'); s.textContent = ch; w.append(s);
+        const c = { el: s, ch, r0: before[ni][ci++], next: null, first: !prev }; if (prev) prev.next = c; prev = c; chars.push(c);
+      }
+      frag.append(w);
+    }
+    n.replaceWith(frag);
+  });
+  for (const c of chars) c.w = c.el.getBoundingClientRect().width / k;
+  for (const c of chars) {                            // separate boxes lose kerning: give the pair back its natural advance
+    const n = c.next; if (!n || Math.abs(n.r0.t - c.r0.t) > 4) continue;
+    const d = (n.r0.l - c.r0.l) - c.w; if (Math.abs(d) > .1) c.el.style.marginRight = d.toFixed(2) + 'px';
+  }
+  // ...and across the space: a pair like "space + T" is kerned too. Whatever drift is left at the start of a word is taken out there.
+  const pos = chars.map(c => c.el.getBoundingClientRect());
+  let pd = 0, pt = null;
+  chars.forEach((c, j) => {
+    const d = pos[j].left / k - c.r0.l, same = pt !== null && Math.abs(pos[j].top / k - pt) < 4;
+    if (c.first && same && Math.abs(d - pd) > .1) c.el.style.marginLeft = (pd - d).toFixed(2) + 'px';
+    pd = d; pt = pos[j].top / k;
+  });
+  node.setAttribute('aria-label', text);
+  return { chars, text };
+}
+function rankOf(n, order, seed) {                     // position of every character in the stagger order
+  const idx = Array.from({ length: n }, (_, i) => i);
+  if (order === 'reverse') idx.reverse();
+  else if (order === 'center') { const c = (n - 1) / 2; idx.sort((a, b) => Math.abs(a - c) - Math.abs(b - c) || a - b); }
+  else if (order === 'random') { const r = rng(seed), key = idx.map(() => r()); idx.sort((a, b) => key[a] - key[b]); }
+  const rank = []; idx.forEach((ci, r) => { rank[ci] = r; });
+  return rank;
+}
+const putc = (c, op, tf) => {                         // write a character's style only when it changed
+  if (c.o !== op) { c.o = op; c.el.style.opacity = op; }
+  if (c.tf !== tf) { c.tf = tf; c.el.style.transform = tf; }
+};
+const nChars = node => node.textContent.replace(/\s+/g, '').length;
+const gapOf = (node, d) => num(node.dataset.stagger, d) || d;
+
+// Per-character reveal, each character rising 0.42 em; data-stagger is the gap (default .03 s), data-order the order.
+anim('chars', { dur: node => (nChars(node) - 1) * gapOf(node, .03) + .55, curve: ease.outExpo, stagger: true,
+  init(node) {
+    const d = splitText(node), n = d.chars.length;
+    d.gap = gapOf(node, .03); d.cd = .55; d.nat = (n - 1) * d.gap + d.cd; d.rank = rankOf(n, node.dataset.order, n * 31 + 7);
+    return d;
+  },
+  f(node, e, i) {
+    const d = i.b.data;
+    if (reduced) { for (const c of d.chars) putc(c, '', ''); return { opacity: e }; }
+    const u = i.raw * d.nat;
+    d.chars.forEach((c, j) => {
+      const q = i.raw >= 1 ? 1 : i.b.curve(seg(u, d.rank[j] * d.gap, d.rank[j] * d.gap + d.cd));
+      q >= 1 ? putc(c, '', '') : putc(c, String(+q.toFixed(3)), `translateY(${((1 - q) * .42).toFixed(3)}em)`);
+    });
+    return {};
+  } });
+
+// Letters spread from tight to loose: every character starts pulled towards the centre of its line (data-spread, default .2).
+anim('tracking', { dur: 1.8, curve: ease.outCubic,
+  init(node) {
+    const d = splitText(node), k = fitKLive(), rects = d.chars.map(c => c.el.getBoundingClientRect()), lines = new Map();
+    const key = r => Math.round(r.top / k / 8);
+    for (const r of rects) { const L = lines.get(key(r)) || { a: 1e9, b: -1e9 }; L.a = Math.min(L.a, r.left / k); L.b = Math.max(L.b, r.right / k); lines.set(key(r), L); }
+    d.chars.forEach((c, j) => { const L = lines.get(key(rects[j])); c.off = (rects[j].left + rects[j].right) / 2 / k - (L.a + L.b) / 2; });
+    d.spread = num(node.dataset.spread, .2);
+    return d;
+  },
+  f(node, e, i) {
+    const d = i.b.data;
+    if (reduced) { for (const c of d.chars) putc(c, '', ''); return { opacity: e }; }
+    const o = String(+clamp(e * 2.4).toFixed(3));
+    for (const c of d.chars) e >= 1 ? putc(c, '', '') : putc(c, o, `translateX(${(-c.off * d.spread * (1 - e)).toFixed(2)}px)`);
+    return { opacity: i.raw > 0 ? 1 : 0 };
+  } });
+
+// Characters settle from seeded noise into the real text, left to right with jitter. Cells keep their natural width, so the line never reflows.
+const NOISE = { A: 'ABCDEFGHJKLNPRSTUVXYZ', a: 'abcdeghknopqsuvxyz', 0: '0123456789', '#': '#%&*+=?/<>' };
+anim('scramble', { dur: node => Math.min(1.8, .8 + nChars(node) * .03), curve: ease.linear, stagger: true,
+  init(node) {
+    const d = splitText(node), n = d.chars.length, r = rng(n * 17 + 3), rank = rankOf(n, node.dataset.order, n * 13 + 5);
+    node.classList.add('dk-scr');
+    for (const c of d.chars) c.el.style.width = c.w + 'px';
+    d.cls = d.chars.map(c => /[.,:;!?'"’“”()\-–—…·]/.test(c.ch) ? '' : /[A-Z]/.test(c.ch) ? 'A' : /[a-z]/.test(c.ch) ? 'a' : /\d/.test(c.ch) ? '0' : /\p{L}/u.test(c.ch) ? 'a' : '#');
+    d.settle = d.chars.map((c, j) => .1 + .74 * rank[j] / Math.max(1, n - 1) + .16 * r());
+    return d;
+  },
+  f(node, e, i) {
+    const d = i.b.data, frame = Math.floor(i.raw * i.b.dur * 22);
+    d.chars.forEach((c, j) => {
+      const done = reduced || i.raw >= d.settle[j] || !d.cls[j], s = done ? c.ch : NOISE[d.cls[j]][Math.floor(ihash(j, frame, 7) * NOISE[d.cls[j]].length)];
+      if (c.s !== s) { c.s = s; c.el.textContent = s; }
+      putc(c, done ? '' : '.55', '');
+    });
+    return { opacity: reduced ? e : i.raw > 0 ? 1 : 0 };
+  } });
+
+// Split-flap word swap: data-words="one|two|three" shows one word per step, starting at data-step. The width of the widest
+// word is reserved, so the sentence around it never moves. The authored text is only the fallback.
+const FLIP_P = 'perspective(900px)';
+const flipSet = (x, vis, op, tf) => {
+  const c = x._c || (x._c = {});
+  if (c.v !== vis) { c.v = vis; x.style.visibility = vis ? '' : 'hidden'; }
+  if (op != null && c.o !== op) { c.o = op; x.style.opacity = op; }
+  if (tf != null && c.t !== tf) { c.t = tf; x.style.transform = tf; }
+};
+anim('flip', { dur: .6, curve: ease.linear,
+  steps: b => (b.data ? b.data.words.length - 1 : 0),
+  init(node) {
+    const words = (node.dataset.words || node.textContent).split('|').map(s => s.trim()).filter(Boolean), k = fitKLive();
+    const probe = el('span', { style: { position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap' } });
+    node.textContent = ''; node.append(probe);
+    let W = 0; for (const w of words) { probe.textContent = w; W = Math.max(W, probe.getBoundingClientRect().width / k); }
+    probe.remove();
+    const wrap = el('span', { class: 'dk-flip', 'aria-hidden': 'true', style: { minWidth: Math.ceil(W) + 'px' } }, node);
+    const base = el('span', { class: 'dk-fl-base' }, wrap), mk = c => el('span', { class: 'dk-fl ' + c }, wrap);
+    const L = { bt: mk('dk-fl-t'), ab: mk('dk-fl-b'), at: mk('dk-fl-t'), bb: mk('dk-fl-b'), hinge: mk('dk-fl-h') };
+    return { words, base, L, key: -1 };
+  },
+  f(node, e, i) {
+    const d = i.b.data, st = i.st, b = i.b, K = d.words.length, { L } = d;
+    const j = clamp(st.step - b.step, 0, K - 1), lt = j === 0 ? i.lt : stepLT(b.step + j, st, 0);
+    if (j > 0 && st.step === b.step + j) st._end = Math.max(st._end, b.dur);
+    const q = reduced ? 1 : seg(lt, 0, b.dur), w = d.words[j], a = j ? d.words[j - 1] : '';
+    if (d.key !== j) {
+      d.key = j; d.base.textContent = w; node.setAttribute('aria-label', w);
+      L.bt.textContent = L.bb.textContent = w; L.ab.textContent = L.at.textContent = a;
+    }
+    const u = seg(q, 0, .5), v = seg(q, .5, 1), done = q >= 1;
+    flipSet(d.base, done);
+    flipSet(L.hinge, !done, String(.3));
+    flipSet(L.bt, !done, String(+(q < .5 ? seg(u, .3, .9) : 1).toFixed(3)));
+    flipSet(L.ab, !done, String(+(q < .5 ? 1 : 1 - seg(v, .15, .7)).toFixed(3)));
+    flipSet(L.at, !done && q < .5, '', `${FLIP_P} rotateX(${(-90 * ease.inQuad(u)).toFixed(2)}deg)`);
+    flipSet(L.bb, !done && q >= .5, '', `${FLIP_P} rotateX(${(90 * (1 - ease.outCubic(v))).toFixed(2)}deg)`);
+    return { opacity: i.leaving ? i.raw : st.step < b.step || (j === 0 && i.raw <= 0) ? 0 : 1 };
+  } });
+
+/* ───────────────────────── statements: "Setup:|*payoff*" ─────────────────────────
+ * data-say (or Deck.say(el, text)) turns the string into <span class="say-s">setup</span> <em class="pay">payoff</em>.
+ * `|` splits setup from payoff (in the payoff, `|` is a line break); the asterisks around the payoff are optional. At most 8 words. */
+function say(node, text) {
+  const t = String(text ?? node.textContent).replace(/\s+/g, ' ').trim();
+  let setup = '', pay = t;
+  const bar = t.indexOf('|');
+  if (bar >= 0) { setup = t.slice(0, bar).trim(); pay = t.slice(bar + 1).trim(); }
+  else { const m = /^([^*]*)\*(.+?)\*$/.exec(t); if (m) { setup = m[1].trim(); pay = m[2]; } }
+  pay = pay.replace(/^\*+|\*+$/g, '').trim();
+  const words = (setup + ' ' + pay).split(/\s+/).filter(Boolean).length;
+  if (words > 8) console.warn(`deck-kit: a statement should have at most 8 words, this one has ${words}: "${t}"`);
+  node.classList.add('dk-say'); node.textContent = '';
+  if (setup) node.append(el('span', { class: 'say-s', text: setup }), ' ');
+  const em = el('em', { class: 'pay' }, node);
+  pay.split('|').forEach((line, n) => { if (n) em.append(document.createElement('br')); em.append(line.trim()); });
+  return node;
+}
+
 /* ───────────────────────── transitions ─────────────────────────
  * fn(A, B, p, o): A = outgoing layer, B = incoming layer, p = 0..1.
  * o.sign is +1 going forward, -1 going back. Layers are reset every frame. */
@@ -544,13 +748,13 @@ transition('cover', { dur: .8, dir: 'left', opaque: true, fn(A, B, p, o) {
   const e = ease.inOutQuart(p), [dx, dy] = dirOf(o, 'left');
   if (o.sign > 0) {           // B slides over A
     B.style.transform = tr(-dx * (1 - e) * W, -dy * (1 - e) * H);
-    B.style.boxShadow = '0 0 80px rgba(0,0,0,.25)';
+    B.style.boxShadow = `0 0 80px rgba(0,0,0,${(.25 * e).toFixed(3)})`;
     A.style.transform = tr(dx * e * W * .25, dy * e * H * .25);
     A.style.filter = `brightness(${1 - .25 * e})`;
   } else {                     // going back: the top card slides away
     A.style.zIndex = 2;
     A.style.transform = tr(dx * e * W, dy * e * H);
-    A.style.boxShadow = '0 0 80px rgba(0,0,0,.25)';
+    A.style.boxShadow = `0 0 80px rgba(0,0,0,${(.25 * (1 - e)).toFixed(3)})`;
     B.style.transform = tr(-dx * (1 - e) * W * .25, -dy * (1 - e) * H * .25);
     B.style.filter = `brightness(${.75 + .25 * e})`;
   } } });
@@ -561,17 +765,20 @@ transition('zoom', { dur: .9, fn(A, B, p, o) {      // zoom-through: dive into a
   A.style.transform = `scale(${fwd ? 1 + ease.inExpo(a) * 2.2 : 1 - ease.inCubic(a) * .3})`;
   A.style.opacity = 1 - ease.inCubic(a);
   A.style.filter = a > 0 ? `blur(${a * 10}px)` : '';
-  B.style.transform = `scale(${fwd ? .72 + .28 * ease.outExpo(b) : 3.2 - 2.2 * ease.outExpo(b)})`;
+  const ob = (1 - 2 ** (-10 * b)) / (1 - 2 ** -10);      // outExpo rescaled to reach exactly 1 (the stock curve stops 0.1% short)
+  B.style.transform = `scale(${fwd ? .72 + .28 * ob : 3.2 - 2.2 * ob})`;
   B.style.opacity = ease.outCubic(b); } });
 transition('iris', { dur: .9, fn(A, B, p, o) {
   const [x, y] = origin(o), R = Math.hypot(Math.max(x, W - x), Math.max(y, H - y)) + 2;
   const e = ease.inOutCubic(p);
   if (o.sign > 0) {
     const r = e * R;
+    if (r < .5) { B.style.visibility = 'hidden'; return; }
     B.style.clipPath = `circle(${r}px at ${x}px ${y}px)`;
     A.style.maskImage = `radial-gradient(circle at ${x}px ${y}px, transparent ${r}px, #000 ${r + 1}px)`;
   } else {
     const r = (1 - e) * R;
+    if (r < .5) { A.style.visibility = 'hidden'; return; }
     A.style.zIndex = 2;
     A.style.clipPath = `circle(${r}px at ${x}px ${y}px)`;
     B.style.maskImage = `radial-gradient(circle at ${x}px ${y}px, transparent ${r}px, #000 ${r + 1}px)`;
@@ -608,13 +815,16 @@ transition('tear', { dur: 1, opaque: true, fn(A, B, p, o) {
   top.style.zIndex = 2;
   top.style.clipPath = e > 0 ? teeth() : '';
   top.style.transformOrigin = '100% 100%';
-  top.style.transform = `translateY(${-e * H * 1.08}px) rotate(${-5 * e}deg)`;
+  // travel = the height plus the corner that the tilt swings down, so the sheet is fully off the canvas at p = 1
+  top.style.transform = `translateY(${-e * (H + W * Math.sin(5 * Math.PI / 180) + 40)}px) rotate(${-5 * e}deg)`;
   top.style.boxShadow = e > 0 ? '0 30px 60px rgba(0,0,0,.18)' : '';
   under.style.transform = `scale(${.965 + .035 * e})`;
   under.style.filter = `brightness(${.93 + .07 * e})`; } });
 // Noise dissolve through an SVG filter; the two layers get complementary alpha.
 transition('dissolve', { dur: 1.1, fn(A, B, p) {
-  const th = lerp(.22, .78, ease.inOutSine(p)), S = 14;
+  if (p <= 0) { B.style.visibility = 'hidden'; return; }      // the noise never reaches 0 or 1, so the ends are explicit
+  if (p >= 1) { A.style.visibility = 'hidden'; return; }
+  const th = lerp(-.12, 1.12, ease.inOutSine(p)), S = 14;      // the threshold sweeps past both ends of the noise range
   dsv.inA.setAttribute('slope', -S); dsv.inA.setAttribute('intercept', S * th);
   dsv.outA.setAttribute('slope', S); dsv.outA.setAttribute('intercept', 1 - S * th);
   B.style.filter = 'url(#dk-dsv-in)'; A.style.filter = 'url(#dk-dsv-out)'; } });
@@ -642,6 +852,155 @@ transition('camera', { dur: 1.3, fn(A, B, p, o) {
     L.style.transformOrigin = '0 0';
     L.style.transform = `${tr((s.pos.x - cam.x) / cam.s * W, (s.pos.y - cam.y) / cam.s * H)} scale(${s.pos.s / cam.s})`;
   } } });
+
+/* Cinematic set, ported from the film runtime (every-frame-is-code). Same rule as everything else: each one is a pure
+ * function of p, and at p = 1 every style it wrote is neutral, so the last frame equals the rest frame.
+ * `init` (optional) runs once at load, only if a slide uses the transition. */
+const fxKids = new Map();
+function fxLayer(name) {                     // a full-canvas overlay above the veil, created on first use, hidden again every frame
+  let e = fxKids.get(name);
+  if (!e) { e = el('div', { class: 'dk-fx' }, deckEl); fxKids.set(name, e); }
+  return e;
+}
+function resetFx() { for (const e of fxKids.values()) if (e.style.cssText) e.style.cssText = ''; }
+const rgbOf = (c, d = '255,255,255') => (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c || '') ? hex(c).join(',') : d);
+
+// Seeded speed lines: n wedges, one per sector, so they never overlap. Built once per (origin, colour), scaled and faded per frame.
+function raysBg(ox, oy, rgb, seed, n = 64) {
+  const r = rng(seed), sec = 360 / n, st = [];
+  for (let k = 0; k < n; k++) {
+    const w = sec * (.06 + r() * .5), a0 = k * sec + r() * (sec - w), al = (.25 + r() * .75).toFixed(2), f = Math.min(w / 3, .25);
+    st.push(`transparent ${(a0 - f).toFixed(2)}deg`, `rgba(${rgb},${al}) ${a0.toFixed(2)}deg`, `rgba(${rgb},${al}) ${(a0 + w).toFixed(2)}deg`, `transparent ${(a0 + w + f).toFixed(2)}deg`);
+  }
+  return `conic-gradient(from 0deg at ${ox}px ${oy}px, ${st.join(',')})`;
+}
+function rays(o, col, a, scale, seed) {
+  if (a <= .003) return;
+  const box = fxLayer('rays'), [ox, oy] = origin(o), key = `${ox}|${oy}|${col}|${seed}`;
+  const inner = box.firstElementChild || el('div', { style: { position: 'absolute', inset: '0' } }, box);
+  if (inner.dataset.k !== key) {
+    inner.dataset.k = key;
+    inner.style.background = raysBg(ox, oy, rgbOf(col), seed);
+    inner.style.maskImage = `radial-gradient(circle at ${ox}px ${oy}px, transparent 90px, #000 420px)`;
+  }
+  Object.assign(box.style, { display: 'block', opacity: a.toFixed(3), transformOrigin: `${ox}px ${oy}px`, transform: `scale(${scale.toFixed(3)})` });
+}
+
+// The old slide burns to white (or data-color); the new one comes out of the light with rays. Meaning: the moment it happened.
+transition('flash', { dur: 1, init: () => fxLayer('rays'), fn(A, B, p, o) {
+  const col = o.color || '#fff', v = o.veil.style;
+  v.background = col;
+  if (p < .5) { B.style.visibility = 'hidden'; v.opacity = ease.inExpo(p * 2); return; }
+  const q = (p - .5) * 2;
+  A.style.visibility = 'hidden';
+  v.opacity = 1 - ease.outCubic(q);
+  rays(o, col, (1 - q) * .85, 1 + q * .55, 3);
+} });
+
+// A hard cut on the beat: the old slide leans in, the new one lands 7% too big and settles, the old one lingers as a ghost.
+// Meaning: an accent, one per section at most.
+transition('punch', { dur: .5, fn(A, B, p, o) {
+  const CUT = .16, [ox, oy] = origin(o), org = `${ox}px ${oy}px`;
+  A.style.transformOrigin = B.style.transformOrigin = org;
+  if (p < CUT) { A.style.transform = `scale(${1 + .03 * ease.inQuad(p / CUT)})`; B.style.visibility = 'hidden'; return; }
+  const q = (p - CUT) / (1 - CUT), k = 1 - ease.outCubic(q), g = .3 * (1 - ease.outQuad(seg(q, 0, .6)));
+  if (k > 1e-3) B.style.transform = `scale(${1 + .07 * k})`;
+  if (g > .004) { A.style.opacity = g; A.style.transform = `scale(${1.03 + .06 * ease.outCubic(q)})`; } else A.style.visibility = 'hidden';
+  o.veil.style.background = o.color || '#fff'; o.veil.style.opacity = .14 * k * k;
+} });
+
+// A fast pan with horizontal motion blur: one SVG blur whose strength follows the speed of the pan (zero at both ends, so
+// nothing is filtered at rest). Meaning: "and meanwhile", the next place, the pace picks up.
+const whip = {};
+transition('whip', { dur: .7, dir: 'left',
+  init() {
+    if (whip.blur) return;
+    const holder = el('div', { class: 'dk-defs', html: `<svg width="0" height="0" aria-hidden="true"><filter id="dk-whip" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="0 0"/></filter></svg>` }, document.body);
+    whip.blur = holder.querySelector('feGaussianBlur');
+  },
+  fn(A, B, p, o) {
+    // inOutExpo rescaled to hit 0 and 1 exactly (the stock curve stops 0.05% short: a 1 px jump at p = 1)
+    const [dx, dy] = dirOf(o, 'left'), k = 2 ** -10, n = 1 - k, ex = p < .5 ? 2 ** (20 * p - 10) : 2 ** (10 - 20 * p);
+    const e = p <= 0 ? 0 : p >= 1 ? 1 : p < .5 ? (ex - k) / 2 / n : 1 - (ex - k) / 2 / n;
+    const v = p <= 0 || p >= 1 ? 0 : Math.LN2 * 10 * ex / n;   // d(e)/dp
+    const sg = Math.min(56, 7.5 * v);
+    A.style.transform = tr(dx * e * W, dy * e * H);
+    B.style.transform = tr(-dx * (1 - e) * W, -dy * (1 - e) * H);
+    if (sg > .8) {
+      whip.blur.setAttribute('stdDeviation', dx ? `${sg.toFixed(1)} 0` : `0 ${(sg * .56).toFixed(1)}`);
+      A.style.filter = B.style.filter = 'url(#dk-whip)';
+    }
+  } });
+
+// Offset stripes, seeded by the frame index (20 states per second), so the same p always draws the same glitch.
+// The base slide has the stripes cut out of it; the other one shows only inside them, pushed sideways (the gap shows the stage);
+// now and then they swap. Layers stay transparent, so the last frame is exactly the rest frame. Meaning: something is broken or corrupt.
+transition('glitch', { dur: .7, fn(A, B, p, o) {
+  const amp = Math.sin(Math.PI * p);
+  if (p >= .96 || p <= .04 || amp < .12) { (p >= .5 ? A : B).style.visibility = 'hidden'; return; }
+  const r = rng(Math.floor(p * o.dur * 20) * 7919 + 1), swap = r() < .3;
+  const base = (p >= .5) !== swap ? B : A, top = base === B ? A : B;
+  let d = '';
+  for (let i = 5 + Math.floor(r() * 8); i > 0; i--) { const y = Math.round(r() * (H - 80)), h = Math.round(8 + r() * 60 * amp); d += `M0 ${y}H${W}V${y + h}H0Z`; }
+  base.style.zIndex = 1; top.style.zIndex = 2;
+  base.style.clipPath = `path(evenodd, 'M0 0H${W}V${H}H0Z${d}')`;
+  top.style.clipPath = `path('${d}')`;
+  top.style.transform = `translateX(${Math.round((r() - .5) * 2 * (60 + 190 * amp))}px)`;
+} });
+
+// Bayer ordered dither: both slides are masked by complementary tiled 8x8 threshold patterns, one pre-rendered tile per level
+// (2 x 65 tiny PNGs), so a frame costs two mask swaps: no noise, no filter, no per-pixel work, no opaque cards, and every cell
+// shows exactly one slide. data-cell is the cell size in px (default 14), data-seed shifts the pattern. Meaning: sampling, going digital.
+const bayer8 = (() => {
+  let m = [[0]];
+  while (m.length < 8) {
+    const k = m.length, t = [];
+    for (let y = 0; y < 2 * k; y++) { t[y] = []; for (let x = 0; x < 2 * k; x++) t[y][x] = m[y % k][x % k] * 4 + [[0, 2], [3, 1]][y >= k ? 1 : 0][x >= k ? 1 : 0]; }
+    m = t;
+  }
+  return m;
+})();
+const ditherSets = new Map();
+function ditherTiles(cell, seed) {
+  const key = `${cell}|${seed}`;
+  let set = ditherSets.get(key);
+  if (!set) {
+    const r = rng(seed * 101 + 7), sx = Math.floor(r() * 8), sy = Math.floor(r() * 8), T = 8 * cell;
+    const small = document.createElement('canvas'), big = document.createElement('canvas'), sg = small.getContext('2d'), bg = big.getContext('2d');
+    small.width = small.height = 8; big.width = big.height = T; bg.imageSmoothingEnabled = false;
+    set = { on: [], off: [], T };
+    for (let lvl = 0; lvl <= 64; lvl++) for (const [name, inv] of [['on', 0], ['off', 1]]) {
+      const img = sg.createImageData(8, 8);
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) img.data[(y * 8 + x) * 4 + 3] = (bayer8[(y + sy) & 7][(x + sx) & 7] < lvl) !== !!inv ? 255 : 0;
+      sg.putImageData(img, 0, 0); bg.clearRect(0, 0, T, T); bg.drawImage(small, 0, 0, T, T);
+      set[name].push(`url(${big.toDataURL('image/png')})`);
+    }
+    ditherSets.set(key, set);
+  }
+  return set;
+}
+const maskWith = (x, img, T) => Object.assign(x.style, { maskImage: img, maskSize: `${T}px ${T}px`, maskRepeat: 'repeat' });
+transition('dither', { dur: .9, init: () => ditherTiles(14, 0), fn(A, B, p, o) {
+  const fwd = o.sign > 0, L = Math.round(64 * ease.inOutSine(p)), lvl = fwd ? L : 64 - L, on = fwd ? B : A, off = fwd ? A : B;
+  if (lvl <= 0) { on.style.visibility = 'hidden'; return; }
+  if (lvl >= 64) { off.style.visibility = 'hidden'; return; }
+  const set = ditherTiles(num(o.data.cell, 14), num(o.data.seed, 0));
+  maskWith(on, set.on[lvl], set.T); maskWith(off, set.off[lvl], set.T);
+} });
+
+// Warm light leak over a crossfade: two screen-blended gradient lobes and a streak sweep across, peaking mid-way.
+// The sweep runs the other way going back. data-color tints it. Meaning: memory, warmth, a change of mood.
+transition('lightleak', { dur: 1.1, fn(A, B, p, o) {
+  const e = ease.inOutSine(p), a = Math.sin(Math.PI * p) ** 1.15, x = lerp(.12, .88, o.sign > 0 ? p : 1 - p) * 100;
+  A.style.opacity = 1 - e; B.style.opacity = e;
+  if (a < .004) return;
+  const c = rgbOf(o.color, '255,196,120'), hot = `255,${Math.round(lerp(196, 240, .5))},${Math.round(lerp(120, 200, .5))}`;
+  const v = o.veil.style;
+  v.mixBlendMode = 'screen'; v.opacity = 1;
+  v.background = `radial-gradient(ellipse 55% 85% at ${x.toFixed(1)}% 38%, rgba(${hot},${(a * .95).toFixed(3)}), rgba(${c},${(a * .55).toFixed(3)}) 38%, rgba(255,90,40,0) 76%),` +
+    `radial-gradient(ellipse 38% 60% at ${(112 - x).toFixed(1)}% 84%, rgba(255,96,64,${(a * .5).toFixed(3)}), rgba(255,60,20,0) 70%),` +
+    `linear-gradient(105deg, rgba(255,232,190,0) ${(x - 12).toFixed(1)}%, rgba(255,232,190,${(a * .22).toFixed(3)}) ${x.toFixed(1)}%, rgba(255,232,190,0) ${(x + 12).toFixed(1)}%)`;
+} });
 
 /* ───────────────────────── helpers for charts & diagrams ───────────────────────── */
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -733,6 +1092,114 @@ function pointAt(path, p) {
   const q = path.getPointAtLength(clamp(p) * L); return { x: q.x, y: q.y };
 }
 
+/* ───────────────────────── Deck.fx: opt-in atmosphere for the stage and canvas slides ─────────────────────────
+ * Nothing here runs unless a deck calls it; every cache is keyed by the look (colour, size), never by time.
+ * Everything is a pure function of its arguments and a seed. Recipes: 10-stage.md. */
+const _sprites = new Map();
+const spriteOf = (key, make) => { let s = _sprites.get(key); if (!s) { if (_sprites.size > 64) _sprites.clear(); s = make(); _sprites.set(key, s); } return s; };
+const newCanvas = (w, h = w) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const _rgbCss = new Map();
+function cssRgb(c) {                       // '#rgb', '#rrggbb', 'rgb(r,g,b)' without touching a canvas; anything else is parsed once by the browser
+  let v = _rgbCss.get(c);
+  if (!v) {
+    let m;
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)) v = hex(c);
+    else if ((m = /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(c))) v = [+m[1], +m[2], +m[3]];
+    else { const t = newCanvas(1).getContext('2d'); t.fillStyle = c; t.fillRect(0, 0, 1, 1); v = [...t.getImageData(0, 0, 1, 1).data].slice(0, 3); }
+    if (_rgbCss.size > 256) _rgbCss.clear();
+    _rgbCss.set(c, v);
+  }
+  return v;
+}
+const fx = {
+  // Seeded 2D value noise and fractal noise, both 0..1: n(x, y), fbm(x, y, octaves = 5).
+  noise(seed = 1) {
+    const r = rng(seed), P = new Uint8Array(512), G = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { P[i] = i; G[i] = r(); }
+    for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [P[i], P[j]] = [P[j], P[i]]; }
+    for (let i = 0; i < 256; i++) P[i + 256] = P[i];
+    const h = (x, y) => G[P[P[x & 255] + (y & 255)]];
+    const n = (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      return lerp(lerp(h(xi, yi), h(xi + 1, yi), u), lerp(h(xi, yi + 1), h(xi + 1, yi + 1), u), v);
+    };
+    const fbm = (x, y, oct = 5) => { let s = 0, a = .5; for (let i = 0; i < oct; i++) { s += a * n(x, y); x *= 2; y *= 2; a *= .5; } return s / (1 - .5 ** oct); };
+    return { n, fbm };
+  },
+  // Film grain from `tiles` pre-rendered seeded tiles of black and white specks with varying alpha (they read on dark and on light
+  // backgrounds); the tile and its offset change `fps` times a second (12..24). g.draw(ctx, S, amount, live = true) inside Deck.stage's
+  // draw. Frozen on S.rest (exports) and when live is false; then it does not read S.T, so the deck can go idle. ?nograin (or
+  // g.enabled = false) turns it off. Pair it with `ambient: g.fps` on the stage. Tiles are drawn with drawImage (a pattern fill of the
+  // whole canvas is 5-10x slower in a software canvas). g.warm() builds the tiles early, so the first frame does not pay for them.
+  grain({ size = 512, tiles = 6, fps = 18, seed = 100, blend = 'source-over' } = {}) {
+    fps = clamp(fps, 12, 24);
+    let cvs = null;
+    const g = { fps, enabled: !Q.has('nograin'),
+      warm() {
+        if (cvs || !g.enabled) return g;
+        const r = rng(seed);
+        cvs = Array.from({ length: tiles }, () => {
+          const c = newCanvas(size), x = c.getContext('2d'), img = x.createImageData(size, size);
+          for (let i = 0; i < img.data.length; i += 4) { const v = r(); img.data[i] = img.data[i + 1] = img.data[i + 2] = v > .5 ? 255 : 0; img.data[i + 3] = Math.abs(v - .5) * 510; }
+          x.putImageData(img, 0, 0);
+          return c;
+        });
+        return g;
+      },
+      draw(ctx, S, amount = .06, live = true) {
+        if (!g.enabled || amount <= 0) return false;
+        g.warm();
+        const tick = live && !S.rest ? Math.floor(S.T * fps) : 0, ox = ihash(tick, seed, 1) * size | 0, oy = ihash(tick, seed, 2) * size | 0, tile = cvs[tick % tiles];
+        ctx.save(); ctx.globalAlpha = amount; ctx.globalCompositeOperation = blend;
+        for (let x = -ox; x < S.W; x += size) for (let y = -oy; y < S.H; y += size) ctx.drawImage(tile, x, y);
+        ctx.restore();
+        return true;
+      } };
+    return g;
+  },
+  // Darkened corners from one small cached gradient stretched over the canvas. S needs W and H (the stage's S does).
+  vignette(ctx, S, { strength = .45, inner = .35, color = '0,0,0' } = {}) {
+    const c = spriteOf(`vig|${strength}|${inner}|${color}|${S.W}|${S.H}`, () => {
+      const w = 256, h = Math.max(2, Math.round(256 * S.H / S.W)), cv = newCanvas(w, h), g = cv.getContext('2d');
+      const gr = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * inner, w / 2, h / 2, Math.hypot(w, h) * .6);
+      gr.addColorStop(0, `rgba(${color},0)`); gr.addColorStop(1, `rgba(${color},${strength})`);
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      return cv;
+    });
+    ctx.drawImage(c, 0, 0, S.W, S.H);
+  },
+  // Two-layer glow (a wide faint halo and a tight bright core with a near-white centre) drawn from a sprite that is cached by
+  // its look. `r` is the radius on screen; draw it hundreds of times if you like, nothing is blurred per call.
+  // Colours are quantized to 16 levels per channel for the cache key, so an animated tint cannot flood the cache; to move
+  // smoothly between two colours pass `to` and `t` (0..1): both glows are drawn, cross-faded by alpha.
+  glow(ctx, x, y, r, color, { a = 1, core = .35, halo = 1, op = 'lighter', to = null, t = 0 } = {}) {
+    const one = (c, alpha) => {
+      if (alpha <= .004) return;
+      const q = cssRgb(c).map(v => Math.round(v / 17) * 17).join(',');
+      const s = spriteOf(`glow|${q}|${core}|${halo}`, () => {
+        const N = 256, cv = newCanvas(N), g = cv.getContext('2d'), m = N / 2, [R, G, B] = q.split(',').map(Number);
+        let gr = g.createRadialGradient(m, m, 0, m, m, m * halo);
+        gr.addColorStop(0, `rgba(${q},.55)`); gr.addColorStop(.4, `rgba(${q},.18)`); gr.addColorStop(1, `rgba(${q},0)`);
+        g.fillStyle = gr; g.fillRect(0, 0, N, N);
+        gr = g.createRadialGradient(m, m, 0, m, m, m * core);
+        gr.addColorStop(0, `rgba(${[R, G, B].map(v => Math.round(lerp(v, 255, .65))).join(',')},1)`); gr.addColorStop(.45, `rgba(${q},.65)`); gr.addColorStop(1, `rgba(${q},0)`);
+        g.fillStyle = gr; g.fillRect(0, 0, N, N);
+        return cv;
+      });
+      ctx.save(); ctx.globalCompositeOperation = op; ctx.globalAlpha = alpha; ctx.drawImage(s, x - r, y - r, r * 2, r * 2); ctx.restore();
+    };
+    one(color, a * (1 - t));
+    if (to) one(to, a * t);
+  },
+  // Hand-drawn jitter, "line boil": the pattern is new `fps` times a second (default 10) and identical within a tick.
+  // const j = fx.boil(seed, T, 10); const [dx, dy] = j(i, amp);   or   fx.boil.pts(points, seed, T, amp, fps)
+  boil(seed, t, fps = 10) {
+    const f = Math.floor(t * fps);
+    return (i, amp = 1) => [(ihash(seed, f, i * 2) - .5) * amp, (ihash(seed, f, i * 2 + 1) - .5) * amp];
+  },
+};
+fx.boil.pts = (pts, seed, t, amp = 1.6, fps = 10) => { const j = fx.boil(seed, t, fps); return pts.map(([x, y], i) => { const [dx, dy] = j(i, amp); return [x + dx, y + dy]; }); };
+
 /* ───────────────────────── fit text ─────────────────────────
  * data-fit       shrink until the content fits the element's box (it needs a width, and a height to fit both)
  * data-fit="2"   shrink until the text takes at most 2 lines
@@ -803,7 +1270,7 @@ function parseBuilds(s) {
   };
   for (const node of s.el.querySelectorAll('[data-step],[data-anim],[data-stagger],[data-dim],[data-out]')) {
     if (node.closest('.notes')) continue;
-    if (node.dataset.stagger != null) {
+    if (node.dataset.stagger != null && !ANIMS[node.dataset.anim]?.stagger) {
       const gap = num(node.dataset.stagger, .08) || .08;
       let kids = [...node.children];
       if (node.dataset.order === 'reverse') kids.reverse();
@@ -815,7 +1282,7 @@ function parseBuilds(s) {
   }
   s.builds = list;
   let m = s.hook.steps || 0;
-  for (const b of list) m = Math.max(m, b.step, b.out ?? 0, b.dim ?? 0);
+  for (const b of list) m = Math.max(m, b.step + (b.A.steps ? b.A.steps(b) : 0), b.out ?? 0, b.dim ?? 0);
   s.steps = m;
 }
 
@@ -840,7 +1307,7 @@ function applyBuild(b, st) {
     if (ro > 0) { leaving = true; raw = Math.min(raw, 1 - ro); }
   }
   const e = b.curve(raw);
-  const r = b.A.f(b.el, e, { raw, lt, leaving, b }) || {};
+  const r = b.A.f(b.el, e, { raw, lt, leaving, b, st }) || {};
   let op = clamp(r.opacity ?? 1);
   if (b.dim != null) op *= lerp(1, DIM, ease.outCubic(seg(stepLT(b.dim, st, 0), 0, .5)));
   setStyle(b, 'opacity', op === 1 ? '' : String(+op.toFixed(4)));
@@ -897,17 +1364,19 @@ function resizeStage() {
   stageQ = q; stageCv.width = w; stageCv.height = h;
   return true;
 }
-let stageKey = '', stageUsesT = false, stagePos = null;
-// Redraws only when the camera moved, the canvas was resized, or the drawing reads the clock.
+let stageKey = '', stageUsesT = false, stagePos = null, stageDrew = false;
+// Redraws only when the camera moved, the canvas was resized, or the drawing reads the clock. A stage that declares
+// `ambient: fps` is redrawn at most that many times a second and sees T rounded down to 1/fps (it stays a pure function of T).
 // Returns true while the stage animates (it then keeps the deck from going idle).
 function drawStage(info) {
+  stageDrew = false;
   if (!stageCv) return false;
-  const resized = resizeStage(), c = info.cam;
-  const key = `${c.x},${c.y},${c.s},${info.rest},${info.i}`;
-  if (!resized && !stageUsesT && key === stageKey) return false;
-  stageKey = key;
+  const resized = resizeStage(), c = info.cam, amb = stageSpec.ambient === true ? 24 : +stageSpec.ambient || 0;
+  const key = `${c.x},${c.y},${c.s},${info.rest},${info.i},${amb && stageUsesT ? Math.floor(info.T * amb) : 0}`;
+  if (!resized && key === stageKey && (amb || !stageUsesT)) return stageUsesT;
+  stageKey = key; stageDrew = true;
   stagePos = stagePos || slides.map(s => s.pos);
-  const T = info.T; let used = false;
+  const T = amb ? Math.floor(info.T * amb) / amb : info.T; let used = false;
   const S2 = { W, H, slides: stagePos, ...info, get T() { used = true; return T; } };
   stageCtx.setTransform(stageQ, 0, 0, stageQ, 0, 0);
   stageSpec.draw(stageCtx, S2);
@@ -993,12 +1462,12 @@ function beginTransition(from, to, sign, T) {
 function endTransition(tr) {
   resetLayer(tr.A); resetLayer(tr.B);
   if (tr.A !== tr.B) layerOn(tr.A, false);
-  veil.style.cssText = '';
+  veil.style.cssText = ''; resetFx();
   if (tr.morph) { for (const m of tr.morph) { m.na.style.visibility = m.nb.style.visibility = ''; m.ca.remove(); m.cb.remove(); } }
 }
 function renderTransition(tr, p, T) {
   const { A, B, cfg } = tr;
-  resetLayer(A); resetLayer(B); veil.style.cssText = '';
+  resetLayer(A); resetLayer(B); veil.style.cssText = ''; resetFx();
   if (cfg.spec.opaque) A.layer.style.background = B.layer.style.background = `var(--dk-card, ${deckBg})`;
   A.layer.style.willChange = B.layer.style.willChange = 'transform, opacity';
   B.layer.style.zIndex = 1;
@@ -1023,25 +1492,33 @@ function frame(T) {
       const o = renderTransition(S.tr, p, T);
       drawStage({ T, rest: false, i: lerp(S.tr.A.i, S.tr.B.i, ease.inOutCubic(p)), p, from: S.tr.A.i, to: S.tr.B.i,
         cam: o.cam || camOf(S.tr.B) });
-      chrome();
+      chrome(S.tr, p);
       perf.rendered++;
       return;
     }
   }
-  const key = `${S.i}.${S.step}.${S.settled}.${S.t0}`;
-  if (S.idle && S.idleKey === key && !S.dirty) { perf.skipped++; return; }
-  const s = slides[S.i], t = S.settled ? Infinity : T - S.t0;
-  const st = renderSlide(s, S.step, t, T);
+  // The slide and the stage idle independently: a still slide is not redrawn while an ambient stage (grain) ticks.
+  // A slide that reads the clock but declares `ambient: fps` is redrawn at that rate only.
+  const s = slides[S.i], amb = s.hook.ambient === true ? 24 : +s.hook.ambient || 0, t = S.settled ? Infinity : T - S.t0;
+  const key = `${S.i}.${S.step}.${S.settled}.${S.t0}.${amb && S.usesT ? Math.floor(T * amb) : 0}`;
+  let drew = false;
+  if (!(S.still && S.idleKey === key && !S.dirty)) {
+    const st = renderSlide(s, S.step, t, T);
+    S.usesT = st._usesT; S.still = t >= st._end && (!st._usesT || !!amb);
+    S.idleKey = key; S.dirty = false; drew = true;
+    chrome();
+  }
   const stageLive = drawStage({ T, rest: false, i: S.i, p: 1, from: S.i, to: S.i, cam: camOf(s) });
-  chrome();
-  S.idle = !st._usesT && !stageLive && t >= st._end;
-  S.idleKey = key; S.dirty = false;
-  perf.rendered++;
+  S.idle = S.still && !S.usesT && !stageLive;
+  drew || stageDrew ? perf.rendered++ : perf.skipped++;
 }
-function chrome() {
-  const n = slides.length, s = slides[S.i];
-  if (progressEl) progressEl.style.transform = `scaleX(${n > 1 ? (S.i + (s.steps ? S.step / (s.steps + 1) : 0)) / (n - 1) : 1})`;
-  if (numberEl) { const txt = `${S.i + 1} / ${n}`; if (numberEl.textContent !== txt) numberEl.textContent = txt; }
+// Progress bar and counter. During a transition the bar glides from the source to the destination and the counter
+// switches at the middle, so neither jumps on the first frame.
+const progressOf = (i, step) => (slides.length > 1 ? (i + (slides[i].steps ? step / (slides[i].steps + 1) : 0)) / (slides.length - 1) : 1);
+function chrome(tr, p) {
+  const n = slides.length, i = tr ? (p < .5 ? tr.from.i : tr.to.i) : S.i;
+  if (progressEl) progressEl.style.transform = `scaleX(${tr ? lerp(progressOf(tr.from.i, tr.from.step), progressOf(tr.to.i, tr.to.step), ease.inOutCubic(p)) : progressOf(S.i, S.step)})`;
+  if (numberEl) { const txt = `${i + 1} / ${n}`; if (numberEl.textContent !== txt) numberEl.textContent = txt; }
 }
 
 /* ───────────────────────── navigation ───────────────────────── */
@@ -1429,7 +1906,8 @@ function drawAt(T) {
     renderSlide(s, g.step, T - g.t0 + (g.entry || 0), T);
     drawStage({ T, rest: false, i: g.i, p: 1, from: g.i, to: g.i, cam: camOf(s) });
   }
-  S.i = g.kind === 'tr' ? g.to.i : g.i; chrome();
+  S.i = g.kind === 'tr' ? g.to.i : g.i; S.step = g.kind === 'tr' ? g.to.step : g.step;
+  g.kind === 'tr' ? chrome(g, (T - g.t0) / g.dur) : chrome();
 }
 // Rest frame: every build of `step` finished, ambient motion frozen.
 function show(i, step) {
@@ -1481,6 +1959,7 @@ function buildPrint(list) {
 
 /* ───────────────────────── init ───────────────────────── */
 async function init() {
+  for (const n of deckEl.querySelectorAll('[data-say]')) say(n, n.dataset.say || undefined);   // before collect: titles read the built text
   collect();
   deckBg = getComputedStyle(deckEl).backgroundColor;
   if (!deckBg || deckBg === 'rgba(0, 0, 0, 0)') deckBg = getComputedStyle(document.body).backgroundColor || '#fff';
@@ -1498,12 +1977,12 @@ async function init() {
     s.hook.setup?.(s.el, api);
   }
   for (const n of deckEl.querySelectorAll('[data-fit]')) fitText(n);
+  for (const s of slides) parseBuilds(s);     // still laid out: an anim's init may measure (text splitting, custom anims)
+  const used = new Set();
+  for (const s of slides.slice(1)) { const c = trCfg(s, 1); if (!used.has(c.spec)) { used.add(c.spec); c.spec.init?.(); } }
   for (const s of slides) layerOn(s, false);
   html.classList.remove('dk-warm');
-  for (const s of slides) {
-    parseBuilds(s);
-    s.entry = s.i === 0 ? .15 : trCfg(s, 1).dur * .55;
-  }
+  for (const s of slides) s.entry = s.i === 0 ? .15 : trCfg(s, 1).dur * .55;
   let rz = 0;
   addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { fit(); if (overview) toggleOverview(true); }); });
   const h = parseHash();
@@ -1536,7 +2015,7 @@ const api = {
   slide(id, spec) { hooks[id] = spec; return api; },
   // Deck.stage({ setup(ctx), draw(ctx, S) }): canvas behind every slide
   stage(spec) { stageSpec = spec; return api; },
-  anim, transition, next, prev, goto, toast,
+  anim, transition, next, prev, goto, toast, say, fx,
   on(f) { listeners.push(f); return api; },
   get state() { return { i: S.i, step: S.step, count: slides.length }; },
   W, H, MODE, ease, clamp, lerp, seg, spring, rng, mix,

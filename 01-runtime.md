@@ -72,6 +72,7 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `data-color` | colour for `dip` |
 | `data-pos="x y [scale]"` | place in the world for `camera`, in slide units (`0 1.12` is one slide below, with a gap) |
 | `data-lift` | how far `camera` pulls back mid-flight, 0 to 1.5 |
+| `data-cell`, `data-seed` | for `dither`: cell size in px (default 14) and a shift of the pattern |
 | `data-hold="2.4 2 3"` | video seconds per step |
 | `data-title` | title for presenter view and PPTX alt text (default: first h1–h3) |
 | `data-export="last"` | only the final step goes to `png`/`sheet` |
@@ -87,8 +88,11 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `data-ease` | any name from `Deck.ease` |
 | `data-out="n"` | leaves at step n (the same animation, reversed) |
 | `data-dim="n"` | fades to `data-dim` opacity at step n: the "previous point dims" pattern |
-| `data-stagger=".08"` | children animate in order, each 80 ms later; the container's `data-step`, `data-anim` etc. apply to every child |
-| `data-order` | for stagger: `reverse`, `center` (from the middle out), `random` (seeded) |
+| `data-stagger=".08"` | children animate in order, each 80 ms later; the container's `data-step`, `data-anim` etc. apply to every child. On `chars` and `scramble` it is the gap between characters instead |
+| `data-order` | for stagger and `chars`: `reverse`, `center` (from the middle out), `random` (seeded) |
+| `data-words="a\|b\|c"` | for `flip`: one word per step, starting at the element's `data-step` |
+| `data-spread=".2"` | for `tracking`: how tight the letters start (fraction of their distance from the line centre) |
+| `data-say="Setup:\|*payoff*"` | a statement: small setup line, large accent payoff (09-typography.md). Without a value the element's own text is used |
 | `data-from` | for `count`: the start value, shown before the step |
 | `data-morph="key"` | the element travels to the element with the same key on the next slide (`morph` transition) |
 | `data-bleed` | allowed to touch the edges; the check skips it |
@@ -108,6 +112,10 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `wipe` `wipe-left` `wipe-up` `wipe-down` | clip reveal | .8 s inOutCubic |
 | `mask` | the line rises out from under an invisible edge (content is wrapped automatically) | .9 s outExpo |
 | `draw` | SVG strokes draw themselves; works on a shape or a group | 1.2 s inOutCubic |
+| `chars` | each character rises .42 em and fades in, staggered (`data-stagger`, default .03 s) | .03 s per character + .55 s |
+| `tracking` | letters spread from tight to loose around the centre of their line | 1.8 s outCubic |
+| `scramble` | characters settle from seeded noise into the real text, left to right with jitter | .8 s + .03 s per character |
+| `flip` | split-flap word swap, one word of `data-words` per step | .6 s per flip |
 | `count` | counts up to the number written in the markup: `<b data-anim="count">$4.2M</b>` | 1.6 s outExpo |
 | `type` | typewriter, plain text only | 35 ms per character |
 | `highlight` | a marker sweeps behind already-visible text (`--dk-mark`) | .6 s |
@@ -115,6 +123,8 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `none` | appears instantly | |
 
 `highlight` and `strike` do not hide the element before their step: they are emphasis on something already there. `count` and `type` write text; the authored text is always the rest frame.
+
+The four kinetic ones (`chars`, `tracking`, `scramble`, `flip`) split the text once at load, measure it there, and put the real text in `aria-label` (the pieces are `aria-hidden`). The layout stays the authored one: kerning is restored, every character keeps its box, `flip` reserves the width of its widest word. At rest no inline style is left. With `prefers-reduced-motion` they degrade to a fade (`flip` swaps at once). Plain text and inline tags only; do not split a word across a tag. Taste and details: 09-typography.md.
 
 Custom animation:
 
@@ -126,7 +136,7 @@ Deck.anim('feed', { dur: 1.6, curve: Deck.ease.linear,
   } });
 ```
 
-`f` returns any of `{opacity, transform, filter, clip}`; the runtime writes them and clears them at the rest frame. `init(el)` runs once and its return value is available as `info.b.data`.
+`f` returns any of `{opacity, transform, filter, clip}`; the runtime writes them and clears them at the rest frame. `info` is `{raw, lt, leaving, b, st}`: raw progress 0..1, seconds since the build started, whether it is leaving, the build (`b.step`, `b.dur`, `b.curve`) and the frame state `st`. `init(el, b)` runs once, after fonts and while every slide is laid out, so it may measure; its return value is `info.b.data`. Optional spec fields: `stagger: true` (the anim reads `data-stagger` itself instead of it meaning "a group of children") and `steps(b)` (extra steps after `b.step` that the anim uses, as `flip` does).
 
 ## Slide code
 
@@ -134,6 +144,7 @@ Deck.anim('feed', { dur: 1.6, curve: Deck.ease.linear,
 Deck.slide('bars', {
   steps: 2,                    // optional: steps that exist only in code
   active: 3,                   // optional: seconds of motion driven by st.since() (default 4)
+  ambient: 10,                 // optional: the slide reads st.T (line boil, drifting marks) but is redrawn at most 10 times a second
   setup(el, D) {               // once, before builds are parsed: build DOM/SVG here
     el._bars = data.map(d => D.svg('rect', { x: ..., width: ... }, el.querySelector('svg')));
   },
@@ -186,6 +197,14 @@ Rules for `frame`:
 | `fmt(v, {dec, prefix, suffix, compact})` | `fmt(4200000, {compact: true, dec: 1, prefix: '$'})` → `$4.2M` |
 | `mix('#hex', '#hex', p)` | colour interpolation |
 | `ease`, `spring(t, zeta, omega)`, `seg(t, a, b)`, `lerp`, `clamp`, `rng(seed)` | motion maths |
+| `say(el, 'Setup:\|*payoff*')` | build a statement from code (what `data-say` does); warns in the console above 8 words |
+| `fx.noise(seed)` | `{n(x, y), fbm(x, y, octaves)}`: seeded value noise, 0..1 |
+| `fx.grain({fps, size, tiles, seed})` | film grain from pre-rendered tiles: `g.draw(ctx, S, amount, live)`, `g.warm()`, `g.fps`; frozen in rest frames and when `live` is false; `?nograin` disables |
+| `fx.vignette(ctx, S, {strength, inner, color})` | darkened corners from one cached sprite |
+| `fx.glow(ctx, x, y, r, color, {a, core, halo, op, to, t})` | two-layer glow from a sprite cached by look; `to`/`t` cross-fade to a second colour |
+| `fx.boil(seed, T, fps)`, `fx.boil.pts(points, seed, T, amp, fps)` | hand-drawn jitter, new `fps` times a second (default 10) |
+
+`Deck.fx` is opt-in: nothing in it runs, allocates or listens until a deck calls it. Recipes and the performance rules: 10-stage.md.
 
 For something the helpers do not cover (a sankey, a map projection, force layout), load a d3 module from jsDelivr as a UMD `<script src>` so `bundle` can inline it, and run the layout once in `setup`.
 
@@ -199,6 +218,7 @@ For something the helpers do not cover (a sankey, a map projection, force layout
 | `?embed`, `?embed&rest` | slide only, no input; `rest` shows rest frames. Used inside presenter view |
 | `?render`, `?render&hold=1.2` | exporter: scale 1, no clock. `hold` overrides every step's hold in the timeline |
 | `?perf` | live, with a frame-rate HUD (13-performance.md) |
+| `?nograin` | `fx.grain` draws nothing (a deck with no other ambient motion then goes fully idle) |
 
 Keys: → ↓ Space PgDn next · ← ↑ PgUp previous · Home/End · digits + Enter go to slide · **O** or **Esc** overview · **P** presenter · **F** fullscreen · **B** or **.** black screen · **?** help.
 

@@ -62,6 +62,10 @@ Spread: 40–120 ms between items; the whole group under about 0.8 s.
 - **Count to the number.** `data-anim="count"` counts up to the value written in the markup.
 - **Strike the old, count the new.** The demo's prep ticket: `strike` on yesterday's value, `count` with `data-from` to today's.
 
+## Kinetic text
+
+`chars`, `tracking`, `scramble` and `flip` (split-flap, one word per step) are builds like the others: declared with `data-anim`, deterministic, with a rest frame that is the authored text. Use them for the title slide, a tagline, a word that changes per click: at most one per section, and only where the motion says something (the letters of a system settling out of noise, a state that flips). Choice, markup and limits: 09-typography.md. A statement with a small setup and an accent payoff (`data-say`) takes `rise` with `data-stagger` and needs nothing else.
+
 ## Builds that don't
 
 - Every bullet flying in from a different direction.
@@ -72,7 +76,7 @@ Spread: 40–120 ms between items; the whole group under about 0.8 s.
 
 ## Ambient motion
 
-A still slide is fine. A deck is not a video; the speaker is the motion. Use ambient motion only where it explains a process: dots flowing along a pipeline, a pulse on the live node, a slow line on a monitor. Drive it from `st.T` or `st.life()`, so it freezes to a canonical pose in rest frames.
+A still slide is fine. A deck is not a video; the speaker is the motion. Use ambient motion only where it explains a process: dots flowing along a pipeline, a pulse on the live node, a slow line on a monitor. Drive it from `st.T` or `st.life()`, so it freezes to a canonical pose in rest frames. Motion that changes only a few times a second (line boil, film grain, a blinking cursor) does not need 60 redraws: declare `ambient: 10` on the slide spec (or on the stage) and it is redrawn at most that often, while the rest of the deck idles as usual (`Deck.fx.boil`, `Deck.fx.grain`: 10-stage.md).
 
 ## Reduced motion
 

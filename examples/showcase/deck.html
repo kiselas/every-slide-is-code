@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Deck title</title>
+<title>Blackbox · Showcase deck</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=block">
 <style id="deck-kit-css">
 /*! deck-kit runtime styles · MIT. Mechanics only: the look of a deck lives in its own <style>. */
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-letterbox, #000); }
@@ -159,109 +159,170 @@ body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
 .dk-page > .dk-layer { display: block; }
 @media print { html, body { overflow: visible !important; height: auto !important; } }
 </style>
-<!-- Optional plugin, off by default: code slides (Shiki highlighting, magic move, line focus, diffs). To enable, add a style slot for the plugin CSS right after the runtime style above and a script slot for the plugin JS right after the runtime script below, exactly as 14-code-slides.md shows, then run node scripts/sync-runtime.mjs. -->
 <style>
-/* ── Theme: tokens first, then a handful of layout primitives. Replace the palette per deck (04-slide-design.md). */
+/* Blackbox: a flight recorder for production. The deck is its printout: warm graphite, paper-white ink, the recorder's orange.
+   Orange means one thing, "the moment that matters" (the payoff words, the failure). Amber is recorded signal. */
 :root {
-  --bg: #f4f2ee; --ink: #16161a; --muted: #6f6b63; --line: #d8d3c9; --accent: #2b4fe0; --accent-soft: #dde3fb;
-  --display: 'Instrument Serif', Georgia, serif; --text: 'Instrument Sans', system-ui, sans-serif;
-  --dk-mark: var(--accent-soft); --dk-letterbox: #0e0e10; --dk-progress: var(--accent);
+  --bg: #15130f; --ink: #f1ece2; --muted: #9a9282; --rule: #3b362d; --accent: #ff5a1f; --amber: #e8b04a;
+  --display: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --dk-letterbox: #0b0a08; --dk-progress: var(--accent); --dk-number-font: var(--mono); --dk-mark: rgba(255, 90, 31, .32);
+  --dk-say-setup: var(--muted); --dk-say-pay: var(--accent); --dk-proof: var(--muted); --dk-proof-font: var(--mono);
+  --dk-say-setup-font: var(--mono); --dk-say-setup-weight: 500; --dk-say-setup-size: .3em; --dk-say-gap: .22em;
 }
-.deck { background: var(--bg); color: var(--ink); font-family: var(--text); }
-.slide { padding: 120px 150px; }
-.kicker { font: 600 22px/1 var(--text); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 36px; }
-h1 { font: 400 168px/.92 var(--display); letter-spacing: -.02em; margin: 0; }
-h2 { font: 400 88px/1 var(--display); letter-spacing: -.01em; margin: 0 0 48px; max-width: 1450px; }
-.lede { font: 400 38px/1.35 var(--text); color: var(--muted); max-width: 1150px; margin: 0; }
-.foot { position: absolute; left: 150px; bottom: 90px; font: 500 22px/1 var(--text); color: var(--muted); }
-.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 34px; max-width: 1300px; }
-.list li { font: 400 44px/1.2 var(--text); display: grid; grid-template-columns: 90px 1fr; }
-.list li b { font: 400 44px/1.2 var(--display); color: var(--accent); }
-.big { font: 400 360px/.85 var(--display); letter-spacing: -.03em; color: var(--accent); margin: 40px 0 30px; }
-.chart text { font: 500 24px var(--text); fill: var(--muted); }
-.chart .val { font: 600 28px var(--text); fill: var(--ink); }
-.chart .axis { stroke: var(--line); stroke-width: 2; }
-.node rect { fill: #fff; stroke: var(--ink); stroke-width: 2.5; }
-.node text { font: 500 30px var(--text); fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
-.edge { fill: none; stroke: var(--ink); stroke-width: 2.5; }
-.flow { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 34; }
-.card { position: absolute; background: var(--accent); color: #fff; border-radius: 28px; }
-.card span { position: absolute; left: 44px; bottom: 36px; font: 400 64px/1 var(--display); }
+.deck { background: var(--bg); color: var(--ink); font-family: var(--mono); }
+.slide { padding: 110px 150px 130px; }
+.kicker { font: 500 24px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--amber); margin: 0 0 40px; }
+.tc { position: absolute; right: 150px; top: 110px; margin: 0; font: 500 24px/1 var(--mono); color: var(--muted); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.foot { position: absolute; left: 150px; bottom: 64px; margin: 0; font: 500 22px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.foot i { color: var(--accent); font-style: normal; }
+h1 { font: 700 270px/.86 var(--display); letter-spacing: -.035em; margin: 0; white-space: nowrap; width: 1620px; }
+h2 { font: 700 88px/1.02 var(--display); letter-spacing: -.02em; margin: 0 0 40px; max-width: 1500px; }
+.lede { font: 400 40px/1.35 var(--mono); color: var(--ink); max-width: 1300px; margin: 0; }
+.stmt { font: 700 150px/1 var(--display); letter-spacing: -.03em; max-width: 1600px; margin: 60px 0 0; }
+.stmt.sm { font-size: 132px; }
+.big { font: 700 380px/.8 var(--display); letter-spacing: -.045em; color: var(--accent); margin: 30px 0 0; font-variant-numeric: tabular-nums; }
+.unit { font: 500 46px/1 var(--mono); color: var(--muted); letter-spacing: .2em; text-transform: uppercase; margin: 26px 0 0; }
+.status { font: 700 190px/1 var(--display); letter-spacing: -.03em; margin: 40px 0 0; }
+.status small { display: block; font: 500 32px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 22px; }
+.status [data-anim="flip"] { color: var(--accent); }
+.log { position: absolute; right: 150px; bottom: 150px; width: 820px; margin: 0; padding: 30px 36px; border: 2px solid var(--rule); border-radius: 6px; font: 400 26px/1.65 var(--mono); color: var(--muted); }
+.log p { margin: 0; white-space: nowrap; } .log b { color: var(--ink); font-weight: 500; } .log em { color: var(--accent); font-style: normal; }
+.term { margin: 30px 0 0; padding: 44px 52px; width: 1420px; border: 2px solid var(--rule); border-radius: 6px; font: 400 44px/1.6 var(--mono); }
+.term p { margin: 0; white-space: nowrap; } .term .ok { color: var(--amber); } .term .hot { color: var(--accent); }
+.chart text { font: 500 26px var(--mono); fill: var(--muted); }
+.chart .lab { fill: var(--ink); letter-spacing: .12em; }
+.chart .axis { stroke: var(--rule); stroke-width: 2; }
+.chart .tag { font: 700 30px var(--mono); fill: var(--accent); }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 260px 1fr; gap: 24px 40px; max-width: 1600px; }
+.legend li { display: contents; }
+.legend b { font: 700 36px/1.25 var(--mono); color: var(--accent); }
+.legend span { font: 400 34px/1.3 var(--mono); color: var(--ink); }
 </style>
 </head>
 <body>
-<!-- data-transition sets the default; each slide can override how it ENTERS. See 06-transitions.md -->
+<!-- Default transition: push. Each slide names how it ENTERS; the six new ones appear once each, on purpose. A real deck picks two or three (06-transitions.md). -->
 <div class="deck" data-transition="push" data-chrome="progress,number">
 
-  <section class="slide" id="title" data-transition="fade">
-    <p class="kicker" data-anim="fade">Kicker · Month 2026</p>
-    <h1 data-anim="mask">A title that<br>makes a claim</h1>
-    <p class="lede" style="margin-top:56px" data-anim="rise" data-delay=".5">One line that says why the audience should care, in their words.</p>
-    <p class="foot" data-anim="fade" data-delay=".9">Presenter name · Team</p>
-    <aside class="notes"><p>Speaker notes live here. They show in presenter view (P) and go into the PPTX notes.</p></aside>
+  <section class="slide" id="title" data-title="Blackbox: every incident, on tape">
+    <p class="kicker" data-anim="fade">Launch · 2026</p>
+    <p class="tc">T+00:00</p>
+    <h1 data-anim="tracking" data-spread=".14">BLACKBOX</h1>
+    <p class="lede" style="margin-top:70px" data-anim="chars" data-stagger=".026" data-delay=".9">Every incident, on tape.</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-anim="fade" data-delay="2">Every figure in this deck is illustrative.</p>
+    <p class="foot"><i>●</i> Rec · showcase deck</p>
+    <aside class="notes"><p>Blackbox records every request on a production path and lets you replay an incident on a laptop. This deck is also the kit's showcase: each slide uses one new transition or text effect, so the notes say which and why.</p>
+    <p>Title: <code>tracking</code>, the letters spread from tight to loose while the tagline arrives character by character (<code>chars</code>). Nothing here is real data; the proof line says so.</p></aside>
   </section>
 
-  <section class="slide" id="agenda">
-    <p class="kicker">The argument</p>
-    <h2 data-fit="2">Three things to decide today</h2>
-    <!-- data-stagger animates children in order; each li gets its own step and dims when the next one arrives -->
-    <ol class="list">
-      <li data-step="1" data-dim="2"><b>01</b>The problem is bigger than it looks</li>
-      <li data-step="2" data-dim="3"><b>02</b>What we tried, and what worked</li>
-      <li data-step="3"><b>03</b>What we need from this room</li>
-    </ol>
-    <aside class="notes"><p>Reveal one point per click. The previous point dims so the room reads the current one.</p></aside>
+  <section class="slide" id="problem" data-transition="whip" data-dir="left">
+    <p class="kicker">The problem</p>
+    <p class="tc">T+00:30</p>
+    <h2 class="stmt" data-say data-fit="3" data-anim="rise" data-stagger=".4">Incidents leave no tape.|*You debug from rumours.*</h2>
+    <p class="proof" data-step="1" data-anim="rise">Illustrative: median 3 h 40 min to reproduce a production bug.</p>
+    <p class="foot"><i>●</i> Rec · 02</p>
+    <aside class="notes"><p>Transition: <code>whip</code>. A fast pan with motion blur says "and meanwhile": we leave the calm title and land in the pain at speed.</p>
+    <p>The statement is <code>data-say</code>: a small setup, then the payoff in the accent colour, eight words in all. Click for the proof line, the number behind the claim.</p></aside>
   </section>
 
-  <section class="slide" id="number" data-title="38% of onboarding time is re-entered data" data-transition="zoom" data-origin="960 560">
-    <p class="kicker">The headline number</p>
-    <div class="big" data-anim="count">38%</div>
-    <p class="lede" data-anim="rise" data-delay=".6">of onboarding time goes to <span data-step="1" data-anim="highlight">re-entering data we already have</span>.</p>
-    <aside class="notes"><p>Let the number land before the sentence. Click once more to highlight the cause.</p></aside>
+  <section class="slide" id="outage" data-transition="flash" data-grain="live">
+    <p class="kicker">The incident</p>
+    <p class="tc">T+03:12</p>
+    <h2 data-anim="scramble" data-fit="2">At 03:12 checkout stopped</h2>
+    <div class="status"><small>Checkout</small><span data-anim="flip" data-words="OK|SLOW|DOWN" data-step="0">OK</span></div>
+    <div class="log" data-step="1" data-anim="fade">
+      <p data-step="1" data-anim="rise"><b>03:12:07</b> payments  retry 3/3 <em>failed</em></p>
+      <p data-step="2" data-anim="rise"><b>03:12:11</b> gateway   503 <em>upstream timeout</em></p>
+    </div>
+    <p class="foot"><i>●</i> Rec · 03</p>
+    <aside class="notes"><p>Transition: <code>flash</code>. The old slide burns to white and this one comes out of the light with rays: the moment it happened. This slide also keeps the film grain alive (data-grain="live"); the stage freezes it everywhere else.</p>
+    <p>The title settles out of noise (<code>scramble</code>). The status word is a split-flap (<code>flip</code>): one click, one word: OK, SLOW, DOWN. The width of the widest word is reserved, so nothing around it moves.</p></aside>
   </section>
 
-  <section class="slide" id="bars">
-    <p class="kicker">Comparison</p>
-    <h2 data-fit="2">Team C closes tickets twice as fast</h2>
+  <section class="slide" id="noise" data-transition="glitch">
+    <p class="kicker">The tools we have</p>
+    <p class="tc">T+03:40</p>
+    <h2 data-anim="chars" data-stagger=".02" data-fit="2">Three tools, three timelines</h2>
     <svg class="chart" width="1620" height="560" viewBox="0 0 1620 560"></svg>
-    <aside class="notes"><p>Bars grow on entry. Step 1 fades the others and leaves the winner lit.</p></aside>
+    <p class="foot"><i>●</i> Rec · 04</p>
+    <aside class="notes"><p>Transition: <code>glitch</code>. Offset stripes seeded by the frame index: something is corrupt. Here it is the evidence, three sources that disagree.</p>
+    <p>The lines are drawn with <code>Deck.fx.boil</code>: a hand-drawn jitter that changes ten times a second and freezes in exports. The slide declares <code>ambient: 10</code>, so it redraws ten times a second and no more. Click: the three claimed start times.</p></aside>
   </section>
 
-  <section class="slide" id="line">
-    <p class="kicker">Trend</p>
-    <h2 data-fit="2">Costs flattened after the switch</h2>
-    <svg class="chart" width="1620" height="580" viewBox="0 0 1620 580"></svg>
-    <aside class="notes"><p>The line draws itself; the annotation arrives on the click.</p></aside>
-  </section>
-
-  <section class="slide" id="flow" data-transition="wipe">
+  <section class="slide" id="record" data-transition="dither">
     <p class="kicker">How it works</p>
-    <h2 data-fit="2">Three steps, one loop</h2>
+    <p class="tc">T+04:15</p>
+    <h2 data-anim="mask" data-fit="2">Blackbox samples every request</h2>
     <svg class="chart" width="1620" height="520" viewBox="0 0 1620 520"></svg>
-    <aside class="notes"><p>Nodes pop in, edges draw, then the flow starts moving.</p></aside>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-anim="fade" data-delay="1.4">Illustrative: 25 µs of overhead per request at p99.</p>
+    <p class="foot"><i>●</i> Rec · 05</p>
+    <aside class="notes"><p>Transition: <code>dither</code>. A Bayer threshold mask, cell by cell: the picture turns into samples. It suits exactly this slide, a signal becoming discrete points.</p>
+    <p>Click: the stems turn orange and the label says there is no sampling. The claim is that every request is on the tape, not one in a hundred.</p></aside>
   </section>
 
-  <section class="slide" id="morph-a" data-transition="fade">
-    <p class="kicker">Morph</p>
-    <h2 style="max-width:900px">Same object, new role</h2>
-    <div class="card" data-morph="card" style="left:1110px; top:300px; width:660px; height:520px"><span>Before</span></div>
-    <aside class="notes"><p>The card flies to its new place on the next slide (data-morph).</p></aside>
+  <section class="slide" id="replay" data-transition="lightleak">
+    <p class="kicker">The payoff</p>
+    <p class="tc">T+06:00</p>
+    <h2 data-fit="2">Replay the incident on your laptop</h2>
+    <div class="term" data-lint-skip>
+      <p data-anim="type" data-delay=".5"><span class="ok">$</span> blackbox replay --at 03:12:07</p>
+      <p data-step="1" data-anim="fade">→ 4,182 requests loaded</p>
+      <p data-step="2" data-anim="fade" class="hot">→ checkout reproduced in 11 s</p>
+    </div>
+    <p class="foot"><i>●</i> Rec · 06</p>
+    <aside class="notes"><p>Transition: <code>lightleak</code>. A warm leak over a crossfade: a change of mood, from the pain to the way out. It sweeps the other way when you go back.</p>
+    <p>Type the command, then click for the load and the reproduction. Numbers are illustrative.</p></aside>
   </section>
 
-  <section class="slide" id="morph-b" data-title="Elements with the same data-morph key travel between slides" data-transition="morph">
-    <div class="card" data-morph="card" style="left:150px; top:150px; width:1620px; height:640px; background:var(--ink)"><span>After</span></div>
-    <p class="lede" style="position:absolute; left:150px; top:840px" data-anim="rise" data-delay=".5">Elements with the same data-morph key travel between slides.</p>
-    <aside class="notes"><p>Magic move. Use it when the object is the same thing in both slides.</p></aside>
+  <section class="slide" id="number" data-transition="punch">
+    <p class="kicker">The result</p>
+    <p class="tc">T+06:40</p>
+    <h2 data-fit="2">Root cause in 38 seconds, not hours</h2>
+    <div class="big" data-anim="count" data-delay=".2">38</div>
+    <p class="unit">seconds</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-step="1" data-anim="rise">Median from alert to root cause: 3 h 40 min before, 38 s with Blackbox. Illustrative.</p>
+    <p class="foot"><i>●</i> Rec · 07</p>
+    <aside class="notes"><p>Transition: <code>punch</code>. A hard cut on the beat: the new slide lands a little too big and settles, the old one lingers as a ghost. One accent per section, and this is the number that carries the deck.</p>
+    <p>Let the number count, then click for the arithmetic behind it.</p></aside>
   </section>
 
-  <section class="slide" id="close" data-transition="dip">
+  <section class="slide" id="plans" data-title="Blackbox grows from teams to enterprises">
+    <p class="kicker">Pricing</p>
+    <p class="tc">T+07:20</p>
+    <h2 class="stmt sm" style="margin-top:110px">Built for <span data-anim="flip" data-words="teams|platforms|enterprises" data-step="0" style="color:var(--accent)">teams</span></h2>
+    <p class="lede" style="margin-top:70px; color:var(--muted)">One click, one word: three states.</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px">Illustrative plans: free up to 3 services, then per service, then custom.</p>
+    <p class="foot"><i>●</i> Rec · 08</p>
+    <aside class="notes"><p>Transition: plain <code>push</code>, the default: we continue the same thought.</p>
+    <p>Split-flap words (<code>flip</code>, <code>data-words</code>): click twice to walk from teams to platforms to enterprises. The line never reflows, because the widest word is measured once at load.</p></aside>
+  </section>
+
+  <section class="slide" id="ask" data-transition="iris">
     <p class="kicker">The ask</p>
-    <h1 data-anim="mask" style="font-size:150px">Approve the pilot<br>by 14 October</h1>
-    <aside class="notes"><p>End on the decision, not on "Questions?".</p></aside>
+    <p class="tc">T+08:00</p>
+    <h2 class="stmt sm" data-say="Pilot on 20 services.|*Decide by 14 October.*" data-fit="3" data-anim="rise" data-stagger=".45">x</h2>
+    <p class="proof" data-step="1" data-anim="rise">Six weeks, one on-call rotation. Illustrative.</p>
+    <p class="foot"><i>●</i> Rec · 09</p>
+    <aside class="notes"><p>Transition: <code>iris</code>, opening from the middle onto the decision. End on the ask, not on "Questions?".</p>
+    <p>The statement again uses <code>data-say</code>: eight words, the payoff is the date.</p></aside>
+  </section>
+
+  <section class="slide" id="legend" data-transition="dip" data-title="Appendix: what each transition says">
+    <p class="kicker">Appendix</p>
+    <p class="tc">T+09:00</p>
+    <h2 data-fit="2">Six transitions, six meanings</h2>
+    <ul class="legend" data-stagger=".09" data-anim="rise">
+      <li><b>flash</b><span>The moment it happened: burn to white, rays.</span></li>
+      <li><b>punch</b><span>An accent on the beat: hard cut, zoom, ghost.</span></li>
+      <li><b>whip</b><span>Meanwhile: a fast pan, the pace picks up.</span></li>
+      <li><b>glitch</b><span>Broken or corrupt: offset stripes.</span></li>
+      <li><b>lightleak</b><span>Mood change: warm light over a crossfade.</span></li>
+      <li><b>dither</b><span>Sampling, going digital: a Bayer mask.</span></li>
+    </ul>
+    <p class="foot"><i>●</i> Rec · 10</p>
+    <aside class="notes"><p>Reference slide, not part of the talk. A real deck picks two or three of these and ties each to one meaning; this one uses all six to show them.</p></aside>
   </section>
 
 </div>
-
 <script id="deck-kit-js">
 /*! deck-kit runtime · every slide is code · MIT
  * The whole deck is a pure function of (slide, step, t): no animation state is
@@ -1879,74 +1940,81 @@ document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded'
 })();
 </script>
 <script>
-// ── Slide code. Setup runs once; frame(el, st) runs every frame and must be a pure function of st.
-const { svg, scaleLinear, scaleBand, linePath, ease, lerp, pointAt } = Deck;
+const { svg, scaleLinear, linePath, ease, lerp, clamp, mix, seg, fx } = Deck;
+const C = { bg: '#15130f', accent: '#ff5a1f', amber: '#e8b04a', muted: '#9a9282', rule: '#3b362d' };
 
-Deck.slide('bars', {
-  steps: 1,
-  setup(el) {
-    const g = el.querySelector('svg'), data = [['Team A', 41], ['Team B', 47], ['Team C', 96], ['Team D', 38]];
-    const x = scaleBand(data.map(d => d[0]), [0, 1620], { padding: .38 }), y = scaleLinear([0, 100], [480, 20]);
-    svg('line', { class: 'axis', x1: 0, x2: 1620, y1: 480, y2: 480 }, g);
-    el._bars = data.map(([k, v], i) => ({
-      v, i, rect: svg('rect', { x: x(k), width: x.bw, rx: 6, fill: 'var(--accent)' }, g),
-      val: svg('text', { class: 'val', x: x(k) + x.bw / 2, 'text-anchor': 'middle' }, g),
-      lab: svg('text', { x: x(k) + x.bw / 2, y: 526, 'text-anchor': 'middle', text: k }, g),
-      winner: v === 96,
-    }));
-    el._y = y;
+/* ── Stage: chapter light, vignette, film grain. Grain only ticks during transitions and on slides marked data-grain="live";
+   elsewhere it is frozen, so a still slide goes idle. ?nograin removes it entirely. */
+const grain = fx.grain({ fps: 18, seed: 5 });
+const CHAPTER = ['#e8b04a', '#e8b04a', '#ff5a1f', '#ff3d1f', '#e8b04a', '#ff8a3d', '#ff5a1f', '#e8b04a', '#ff5a1f', '#9a9282'];
+let live = [], base;
+Deck.stage({
+  ambient: grain.fps,
+  setup(ctx, { W, H, deck }) {
+    live = [...deck.querySelectorAll('.slide')].map(s => s.dataset.grain === 'live');
+    grain.warm();                                               // build the tiles now, not on the first transition frame
+    base = document.createElement('canvas'); base.width = W; base.height = H;   // graphite + vignette never change: bake them once
+    const b = base.getContext('2d'); b.fillStyle = C.bg; b.fillRect(0, 0, W, H);
+    fx.vignette(b, { W, H }, { strength: .34, inner: .45 });
   },
-  frame(el, st) {
-    for (const b of el._bars) {
-      const p = st.p(0, b.i * .08, 1, ease.outExpo), h = (480 - el._y(b.v)) * p;
-      b.rect.setAttribute('y', 480 - h); b.rect.setAttribute('height', h);
-      b.val.setAttribute('y', 462 - h); b.val.textContent = Math.round(b.v * p);
-      b.val.style.opacity = p;
-      const fade = b.winner ? 1 : lerp(1, .22, st.p(1, 0, .5));
-      b.rect.style.opacity = b.val.style.opacity = fade * p;
-    }
+  draw(ctx, S) {
+    ctx.drawImage(base, 0, 0, S.W, S.H);
+    const i0 = Math.floor(S.i);       // chapter light: cross-fade to the next chapter's colour while the camera moves
+    fx.glow(ctx, S.W * .84, S.H * .12, 700, CHAPTER[i0], { a: .16, core: .5, to: CHAPTER[Math.min(CHAPTER.length - 1, i0 + 1)], t: S.i - i0 });
+    grain.draw(ctx, S, .09, S.p < 1 || live[Math.round(S.i)]);
   },
 });
 
-Deck.slide('line', {
-  steps: 1,
+/* ── 04: three claims about the same second, each drawn with line boil. */
+Deck.slide('noise', {
+  steps: 1, ambient: 10,
   setup(el) {
-    const g = el.querySelector('svg'), vals = [62, 66, 71, 78, 84, 86, 85, 86, 85, 86, 86, 85];
-    const x = scaleLinear([0, vals.length - 1], [60, 1560]), y = scaleLinear([50, 90], [520, 40]);
-    for (const t of y.ticks(4)) {
-      svg('line', { class: 'axis', x1: 60, x2: 1560, y1: y(t), y2: y(t), style: 'opacity:.6' }, g);
-      svg('text', { x: 0, y: y(t) + 8, text: t }, g);
-    }
-    el._path = svg('path', { d: linePath(vals.map((v, i) => [x(i), y(v)])), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 6, 'stroke-linecap': 'round' }, g);
-    el._head = svg('circle', { r: 11, fill: 'var(--accent)' }, g);
-    svg('line', { x1: x(5), x2: x(5), y1: 40, y2: 520, stroke: 'var(--ink)', 'stroke-dasharray': '6 8', 'stroke-width': 2, 'data-step': 1, 'data-anim': 'fade' }, g);
-    svg('text', { x: x(5) + 20, y: 80, text: 'Switch in June', class: 'val', 'data-step': 1, 'data-anim': 'rise' }, g);
-    el._path.setAttribute('pathLength', 1);
+    const g = el.querySelector('svg'), N = fx.noise(3), X0 = 230, X1 = 1620;
+    const rows = [['LOGS', .56, '03:12:07'], ['METRICS', .42, '03:12:04'], ['TRACES', .71, '03:12:11']];
+    el._rows = rows.map(([label, at, time], k) => {
+      const y0 = 120 + k * 190;
+      svg('text', { x: 0, y: y0 + 9, text: label, class: 'lab' }, g);
+      svg('line', { class: 'axis', x1: X0, x2: X1, y1: y0 + 46, y2: y0 + 46 }, g);
+      const base = Array.from({ length: 70 }, (_, i) => {
+        const u = i / 69, spike = Math.exp(-(((u - at) / .025) ** 2)) * 92;
+        return [X0 + u * (X1 - X0), y0 + 30 - (N.fbm(u * 9, k * 4) - .3) * 40 - spike];
+      });
+      const path = svg('path', { fill: 'none', stroke: C.amber, 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'data-anim': 'draw', 'data-delay': .3 + k * .25 }, g);
+      const px = X0 + at * (X1 - X0);
+      svg('circle', { cx: px, cy: y0 - 62, r: 11, fill: C.accent, 'data-step': 1, 'data-anim': 'pop', 'data-delay': k * .12 }, g);
+      svg('text', { x: px + 24, y: y0 - 50, text: time, class: 'tag', 'data-step': 1, 'data-anim': 'rise', 'data-delay': k * .12 }, g);
+      return { path, base, k };
+    });
   },
   frame(el, st) {
-    const p = st.p(0, 0, 1.8, ease.inOutCubic), q = pointAt(el._path, p);
-    el._path.style.strokeDasharray = `${p} 1`;
-    el._head.setAttribute('cx', q.x); el._head.setAttribute('cy', q.y);
+    const T = st.rest ? 0 : st.T;
+    for (const r of el._rows) r.path.setAttribute('d', linePath(fx.boil.pts(r.base, 40 + r.k, T, 3, 10), 'linear'));
   },
 });
 
-Deck.slide('flow', {
+/* ── 05: a signal, and the samples Blackbox takes of it. */
+Deck.slide('record', {
   steps: 1,
   setup(el) {
-    const g = el.querySelector('svg'), nodes = [['Capture', 170], ['Decide', 810], ['Act', 1450]];
-    nodes.forEach(([t, cx], i) => {
-      const n = svg('g', { class: 'node', 'data-anim': 'pop', 'data-delay': i * .15 }, g);
-      svg('rect', { x: cx - 150, y: 170, width: 300, height: 130, rx: 18 }, n);
-      svg('text', { x: cx, y: 235, text: t }, n);
+    const g = el.querySelector('svg'), x = scaleLinear([0, 1], [0, 1620]), Y0 = 420;
+    const f = u => Y0 - 150 - Math.sin(u * 9.4) * 80 - Math.sin(u * 23 + 1) * 34 - Math.max(0, Math.sin(u * 3.2 - 1.6)) * 60;
+    svg('line', { class: 'axis', x1: 0, x2: 1620, y1: Y0, y2: Y0 }, g);
+    svg('path', { d: linePath(Array.from({ length: 160 }, (_, i) => [x(i / 159), f(i / 159)]), 'monotone'), fill: 'none', stroke: C.amber, 'stroke-width': 5, 'stroke-linecap': 'round', 'data-anim': 'draw' }, g);
+    el._stems = Array.from({ length: 34 }, (_, i) => {
+      const u = (i + .5) / 34, px = x(u);
+      return { i, y: f(u), line: svg('line', { x1: px, x2: px, y1: Y0, y2: Y0, stroke: C.amber, 'stroke-width': 4 }, g), dot: svg('circle', { cx: px, cy: Y0, r: 9, fill: C.amber }, g) };
     });
-    const edges = ['M320,235 H660', 'M960,235 H1300', 'M1450,300 C1450,470 170,470 170,300'];
-    el._flows = edges.map((d, i) => {
-      svg('path', { d, class: 'edge', 'data-anim': 'draw', 'data-delay': .5 + i * .25 }, g);
-      return svg('path', { d, class: 'flow', 'data-step': 1, 'data-anim': 'fade' }, g);
-    });
+    svg('text', { x: 0, y: 500, text: 'every request, no sampling', class: 'tag', 'data-step': 1, 'data-anim': 'rise' }, g);
   },
-  // Constant processes are the one place linear motion is right (05-motion.md).
-  frame(el, st) { for (const f of el._flows) f.style.strokeDashoffset = -st.T * 60; },
+  frame(el, st) {
+    const hot = st.p(1, 0, .5, ease.outCubic), col = mix(C.amber, C.accent, hot);
+    for (const s of el._stems) {
+      const p = st.p(0, .5 + s.i * .028, .55, ease.outExpo), y = 420 + (s.y - 420) * p;
+      s.line.setAttribute('y2', y); s.dot.setAttribute('cy', y);
+      s.line.style.stroke = s.dot.style.fill = col;
+    }
+  },
 });
 </script>
 </body>
