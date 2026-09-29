@@ -7,10 +7,14 @@
 // page.screenshot, and gif / mp4 / check / png / sheet / strip / still run on a pool of browsers
 // (one worker thread + one Chrome each). Chunk boundaries depend only on the frame range, never on
 // the number of workers, so any --workers value renders the same frames in the same order.
+//
+// Narrated video: mp4 --timings t.json --voice v.wav [--loudnorm] [--captions o.srt]; timings --from-notes | --check.
+// The timings file is resolved against the natural timeline in every worker, which rewrites the live timeline object.
+// Reference analysis: analyze REF... lives in ../scripts/analyze-reference.mjs (pdf.js inside the same Chrome).
 
 import { chromium } from 'playwright-core';
 import { spawn, spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,7 +42,20 @@ const HELP = `deck-kit export
                                               --draft    half size and frame rate (mp4 15, gif 8), JPEG frames,
                                                          ffmpeg veryfast, 64-colour gif
                                               --profile  10 slowest frames by timecode + mean cost per second
-  node deck.mjs check  deck.html              lint rest frames: overflow, text escaping its box, safe area,
+                                              narrated video (mp4; --timings and --captions also gif):
+                                              --timings t.json   step holds from a file: the second each state starts,
+                                                                 {"1.0": 0, "1.1": 4.2, "2.0": 9.8, ..., "end": 93.5}
+                                              --voice v.wav      voice-over muxed in, padded/trimmed to the video
+                                                                 (video ends at the voice + --tail 0.6 s unless "end" is set)
+                                              --loudnorm         voice at -14 LUFS with a -3 dB limiter; prints the measured level
+                                              --captions o.srt   subtitles: each slide's speaker notes spread over its window
+  node deck.mjs timings deck.html [out.json]  --from-notes  starter timings from the notes' word count (--wpm 150 --pause 0.5)
+                                              --check t.json  resolve a file: the hold every state gets, and what does not fit
+                                                              (--voice v.wav compares lengths, --captions o.srt writes subtitles)
+  node deck.mjs analyze REF... [--out dir]    reference -> report.md, analysis.json, contact-sheet.png: palette and roles, accent
+                                              share, words and text sizes per slide, title regularity. REF: a PDF, a folder or
+                                              list of images, or a deck.html
+  node deck.mjs check deck.html              lint rest frames: overflow, text escaping its box, safe area,
                                               tiny text, overlaps, low-contrast (WCAG 2 gate, APCA shown)
                                               --timeline  also lint frames mid-animation (prints a still spec)
                                               --no-webfonts  with fallback fonts   --workers N
@@ -47,6 +64,8 @@ const HELP = `deck-kit export
                                               prints the CSS. --write  insert it into the deck (or into out.html)
   node deck.mjs bundle deck.html [out.html]   inline CDN scripts, stylesheets and Google Fonts: one offline file
                                               (also adds the fonts fallback block)
+
+  palette (no browser): node ../scripts/palette.mjs --accent "#dd4428" [--bg light|dark|HEX] [--second auto|HEX] [--html out.html]
 
   debug: --signatures file.txt  write a 16x9 luma signature of every captured frame; node deck.mjs sigdiff a.txt b.txt
          compares two of them (frames may differ by +-2 levels between runs, never in order)
@@ -89,8 +108,22 @@ async function workerMain() {
   if (cfg.nofonts) await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await page.goto(pathToFileURL(cfg.inputAbs).href + '?render' + (cfg.hold ? `&hold=${cfg.hold}` : ''));
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
+  // --timings: the step holds come from a timings file (a voice-over's onsets). The runtime's timeline() returns the
+  // live object that __draw reads, so resolving the holds here and rewriting its segments in place changes every
+  // frame this worker draws. Every worker resolves the same file against the same natural timeline: same result.
+  let timing = null;
+  if (cfg.timings) {
+    const nat = await page.evaluate(() => ({ segs: window.__deck.timeline().segs.map(s => ({ kind: s.kind, i: s.i, step: s.step, dur: s.dur })), slides: window.__deck.slides.map(s => ({ steps: s.steps })) }));
+    timing = resolveTimings(nat.segs, nat.slides, cfg.timings, { defaultEnd: cfg.defaultEnd });
+    await page.evaluate(holds => {
+      const tl = window.__deck.timeline(); let T = 0, k = 0;
+      for (const s of tl.segs) { if (s.kind === 'hold') s.dur = holds[k++]; s.t0 = T; T += s.dur; }
+      tl.duration = T; window.__meta.DURATION = T;
+    }, timing.holds);
+  }
   const info = await page.evaluate(() => ({ meta: { ...window.__meta }, deck: window.__deck.slides, title: document.title,
     all: window.__deck.states('all'), last: window.__deck.states('last'), tl: window.__deck.timeline() }));
+  info.timing = timing;
   const { meta } = info;
   await page.setViewportSize({ width: meta.W, height: meta.H });
   if (cfg.pointerAuto) await page.addStyleTag({ content: '*{pointer-events:auto!important}' });
@@ -300,12 +333,21 @@ async function main() {
     steps: flag('--steps'), raster: flag('--raster'), last: flag('--last'), jpg: flag('--jpg'), nofonts: flag('--no-webfonts'), timeline: flag('--timeline'),
     draft: flag('--draft'), profile: flag('--profile'), write: flag('--write'), hold: opt('--hold', null), hashes: opt('--signatures', null),
     workers: opt('--workers', 'auto'), outDir: opt('--out', null),
+    voice: opt('--voice', null), timings: opt('--timings', null), captions: opt('--captions', null), loudnorm: flag('--loudnorm'),
+    tail: +opt('--tail', .6), fromNotes: flag('--from-notes'), checkTimings: opt('--check', null), wpm: +opt('--wpm', 150), pause: +opt('--pause', .5),
     cols: +opt('--cols', 5), slide: +opt('--slide', 2), frames: +opt('--frames', 8),
     from: +opt('--from', 0), to: opt('--to', null), fps: opt('--fps', null), width: +(widthArg ?? 960),
   };
   const [input, ...rest] = argv;
   const outArg = rest[0];
   if (!input) { console.error(HELP); process.exit(1); }
+  if (cmd === 'analyze') {   // reference analysis: a PDF, a folder or list of images, or a deck.html (scripts/analyze-reference.mjs)
+    let mod;
+    try { mod = await import('../scripts/analyze-reference.mjs'); }
+    catch (e) { if (e.code === 'ERR_MODULE_NOT_FOUND' && /analyze-reference/.test(e.message)) throw new Error('analyze needs scripts/analyze-reference.mjs next to export/ (it is not in this copy of the kit)'); throw e; }
+    await mod.analyze({ inputs: [input, ...rest], out: O.outDir, chromium, launchOpts, chromeArgs: CHROME_ARGS, exportDir: path.dirname(fileURLToPath(import.meta.url)), nofonts: O.nofonts });
+    return;
+  }
   const inputAbs = path.resolve(input);
   const base = path.basename(input, path.extname(input));
   const out = outArg || { pdf: `${base}.pdf`, pptx: `${base}.pptx`, png: `${base}-frames`, sheet: `${base}-sheet.png`,
@@ -315,6 +357,17 @@ async function main() {
 
   if (cmd === 'bundle') { await bundle(inputAbs, out); return; }
   if (cmd === 'fonts') { await fonts(inputAbs, outArg, O.write); return; }
+
+  // narrated video: --timings (step holds from a file) and --voice (audio mixed into the mp4)
+  const video = cmd === 'gif' || cmd === 'mp4';
+  if ((O.voice || O.captions) && !video && cmd !== 'timings') throw new Error('--voice and --captions belong to mp4 (--captions also to gif and to timings --check)');
+  if (O.voice && cmd === 'gif') throw new Error('--voice is for mp4: a GIF has no sound');
+  if (O.voice && !fs.existsSync(O.voice)) throw new Error(`voice file not found: ${O.voice}`);
+  if (O.timings && !video) throw new Error('--timings belongs to mp4 and gif (to only check a file: timings deck.html --check timings.json)');
+  const timingsData = video && O.timings ? readTimings(O.timings) : null;
+  const voiceDur = O.voice ? probeDuration(O.voice) : null;
+
+  if (cmd === 'timings') { await timingsCmd(); return; }
 
   if (['png', 'sheet', 'strip', 'still', 'gif', 'mp4', 'check'].includes(cmd)) { await parallel(cmd); return; }
 
@@ -410,7 +463,8 @@ async function main() {
 
   /* ───── commands on the worker pool ───── */
   async function parallel(cmd) {
-    const pool = new Pool({ inputAbs, nofonts: O.nofonts, hold: O.hold, hashes: !!O.hashes, profile: O.profile, pointerAuto: cmd === 'check' });
+    const pool = new Pool({ inputAbs, nofonts: O.nofonts, hold: O.hold, hashes: !!O.hashes, profile: O.profile, pointerAuto: cmd === 'check',
+      timings: timingsData, defaultEnd: voiceDur != null ? voiceDur + O.tail : undefined });
     const info = await pool.start(cmd === 'still' ? Math.max(1, Math.min(nWorkers, Math.ceil(rest.filter(Boolean).length / 3))) : cmd === 'strip' ? Math.min(nWorkers, Math.ceil(O.frames / 2)) : nWorkers);
     const { meta } = info;
     const label = (i, step) => `${i + 1}${info.deck[i].steps ? '.' + step : ''}`;
@@ -492,6 +546,11 @@ async function main() {
         const fps = +(O.fps || (cmd === 'gif' ? (O.draft ? 8 : 12) : O.draft ? Math.min(meta.FPS || 30, 15) : meta.FPS || 30));
         const to = O.to != null ? +O.to : meta.DURATION, first = Math.round(O.from * fps), last = Math.round(to * fps), total = last - first;
         if (total <= 0) throw new Error('empty range: --from must be before --to');
+        if (info.timing) {
+          const tm = info.timing;
+          console.log(`timings: ${tm.states.length} states, video ${fmtT(tm.end)}${voiceDur != null ? `, voice ${fmtT(voiceDur)}${voiceDur > tm.end + 1e-3 ? ' (trimmed to the video)' : ''}` : ''}`);
+          warnList(tm.warnings, 'timings: ');
+        }
         // Draft: half the size, JPEG frames, faster encoder settings.
         const gifWidth = O.draft ? O.width / 2 : O.width;
         const T = { format: O.draft ? 'jpeg' : 'png', quality: 80, fps,
@@ -515,12 +574,29 @@ async function main() {
         } else {
           const list = path.join(tmp, 'list.txt');
           fs.writeFileSync(list, chunks.map(c => `file '${c.file.replace(/\\/g, '/')}'`).join('\n'));
-          const r = spawnSync('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', path.resolve(out)], { stdio: ['ignore', 'ignore', 'inherit'] });
+          // Join the chunks without re-encoding. With --voice the audio is cut at --from, filtered, padded with silence
+          // (apad) and trimmed (-t) to exactly the video's length, and muxed in the same call.
+          const dur = total / fps, args = ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list];
+          if (O.voice) {
+            args.push('-ss', String(first / fps), '-t', String(dur), '-i', path.resolve(O.voice));
+            const af = ['aresample=48000', 'aformat=channel_layouts=stereo',
+              ...(O.loudnorm ? ['loudnorm=I=-14:TP=-1.5:LRA=11', 'alimiter=limit=0.72:attack=5:release=60:level=disabled', 'aresample=48000'] : []),
+              `apad=whole_dur=${dur.toFixed(3)}`].join(',');
+            args.push('-filter_complex', `[1:a]${af}[a]`, '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-t', dur.toFixed(3));
+          } else args.push('-c', 'copy');
+          args.push('-movflags', '+faststart', path.resolve(out));
+          const r = spawnSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'inherit'] });
           fs.rmSync(tmp, { recursive: true, force: true });
-          if (r.status !== 0) throw new Error('ffmpeg concat failed');
+          if (r.status !== 0) throw new Error(O.voice ? 'ffmpeg failed while joining the chunks and the voice-over' : 'ffmpeg concat failed');
         }
         writeHashes(res.flatMap(r => r.hashes));
-        finish(`${cmd}: ${out} (${(total / fps).toFixed(1)} s at ${fps} fps, ${(fs.statSync(out).size / 1024 / 1024).toFixed(2)} MB, ${elapsed.toFixed(1)} s wall)`);
+        if (O.captions) {
+          const tm = info.timing || naturalTiming(info);
+          const n = writeSrt(O.captions, captionCues(info.deck, tm, first / fps, last / fps));
+          console.log(`captions: ${O.captions} (${n} cues from the speaker notes)`);
+        }
+        if (O.voice) { const l = measureLoudness(out); if (l) console.log(`audio: integrated ${l.I} LUFS, true peak ${l.tp} dBFS${O.loudnorm ? ' (--loudnorm targets -14 LUFS with a -3 dB limiter)' : ''}`); }
+        finish(`${cmd}: ${out} (${(total / fps).toFixed(1)} s at ${fps} fps, ${(fs.statSync(out).size / 1024 / 1024).toFixed(2)} MB, ${elapsed.toFixed(1)} s wall${O.voice ? ', with voice-over' : ''})`);
         if (O.profile) profile(res.flatMap(r => r.times), new Set(chunks.map(c => c.a / fps)), info, fmtT, label, cmd === 'gif');
       }
 
@@ -554,6 +630,34 @@ async function main() {
     } catch (e) {
       pool.kill(); throw e;
     }
+    await pool.close();
+  }
+
+  /* ───── timings: a starter file from the speaker notes, or a dry run of a file ───── */
+  async function timingsCmd() {
+    const pool = new Pool({ inputAbs, nofonts: O.nofonts, hold: O.hold });
+    try {
+      const info = await pool.start(1);
+      const defaultEnd = voiceDur != null ? voiceDur + O.tail : undefined;
+      let timing;
+      if (O.fromNotes) {
+        const r = timingsFromNotes(info, O.wpm, O.pause);
+        const file = outArg || `${base}-timings.json`;
+        fs.writeFileSync(file, r.json);
+        timing = r.timing;
+        console.log(`timings: ${file}  (${info.deck.length} slides, ${timing.states.length} states, ${O.wpm} words per minute, ${fmtTimeShort(timing.end)} in all)`);
+        console.log('slide  words  speaking  window');
+        info.deck.forEach((s, i) => { const w = r.slides[i]; console.log(`${String(i + 1).padStart(5)}  ${String(w.words).padStart(5)}  ${w.words ? (w.words / (O.wpm / 60)).toFixed(1).padStart(7) + 's' : '  (no notes: the deck\'s own holds)'}  ${w.window.toFixed(1)}s`); });
+        console.log('edit the numbers to the real narration (a stopwatch, or the timestamps of a TTS run), then: node deck.mjs mp4 ' + input + ' --timings ' + file + ' --voice narration.wav');
+      } else if (O.checkTimings) {
+        timing = resolveTimings(info.tl.segs, info.deck, readTimings(O.checkTimings), { defaultEnd });
+        printTiming(timing, info.deck);
+        if (voiceDur != null) console.log(`voice ${fmtTimeShort(voiceDur)}, video ${fmtTimeShort(timing.end)}${voiceDur > timing.end + 1e-3 ? ': the voice is longer and would be trimmed' : ''}`);
+        warnList(timing.warnings, 'warning: ');
+        process.exitCode = timing.warnings.length ? 1 : 0;
+      } else throw new Error('timings: --from-notes [out.json] writes a starter file (--wpm 150 --pause 0.5); --check timings.json resolves a file and lists the holds it gives');
+      if (O.captions) console.log(`captions: ${O.captions} (${writeSrt(O.captions, captionCues(info.deck, timing, 0, timing.end))} cues from the speaker notes)`);
+    } catch (e) { pool.kill(); throw e; }
     await pool.close();
   }
 
@@ -938,6 +1042,161 @@ async function bundle(src, dst) {
   for (const f of skipped) console.warn(`fonts: ${f} is not in @capsizecss/metrics: no fallback block for it`);
   fs.writeFileSync(dst, h);
   console.log(`bundle: ${dst} (${n} resources inlined, ${plan.length} font fallback block(s), ${(fs.statSync(dst).size / 1024).toFixed(0)} KB)`);
+}
+
+/* ───────── narrated video: timings, captions, audio ───────── */
+// A timings file maps states to the second the voice-over reaches them:
+//   { "1.0": 0, "1.1": 4.2, "2.0": 9.8, ..., "end": 93.5 }
+// "S.T" is slide S, step T (1-based slide, as in check and still); "S" alone means "S.0". The number is when
+// the state STARTS: for step 0 of a slide after the first that is the moment the transition into it begins
+// (the build clock starts with it), for the other steps the moment the step's builds begin. A state's hold is
+// what remains until the next start, minus the transition into it. States left out share the gap between the
+// states around them in proportion to their own data-hold. "end" is the length of the video (default: the voice's
+// length plus --tail, or the last state's own hold without a voice). Keys starting with "_" are comments.
+const MIN_HOLD = .25;   // seconds a step must keep on screen after its transition
+
+function readTimings(file) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`timings: cannot read ${file}: ${e.message}`); }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error(`timings: ${file} must be a JSON object such as {"1.0": 0, "2.0": 9.8, "end": 60}`);
+  const states = {}; let end;
+  for (const [k, v] of Object.entries(j)) {
+    if (k[0] === '_') continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error(`timings: "${k}" must be a number of seconds (got ${JSON.stringify(v)})`);
+    if (k === 'end') end = v;
+    else if (/^\d+(\.\d+)?$/.test(k)) states[k] = v;
+    else throw new Error(`timings: "${k}" is not a state: use "slide.step" (1.0, 2.3) or "end"`);
+  }
+  return { states, end };
+}
+
+// segs: the natural timeline (hold and tr segments), slides: [{ steps }]. Returns the holds to play.
+function resolveTimings(segs, slides, T, o = {}) {
+  const st = [];
+  segs.forEach((g, k) => { if (g.kind === 'hold') st.push({ i: g.i, step: g.step, tr: segs[k - 1]?.kind === 'tr' ? segs[k - 1].dur : 0, nat: g.dur }); });
+  const at = new Map(st.map((s, k) => [`${s.i + 1}.${s.step}`, k]));
+  const anchor = new Map();
+  for (const [key, t] of Object.entries(T.states)) {
+    const [S, step = '0'] = key.split('.'), k = at.get(`${+S}.${+step}`);
+    if (k === undefined) throw new Error(`timings: "${key}" is not a state of this deck (${slides.length} slides${slides[+S - 1] ? `; slide ${+S} has steps 0-${slides[+S - 1].steps}` : ''})`);
+    if (anchor.has(k)) throw new Error(`timings: "${key}" repeats a state that is already given ("2" and "2.0" are the same state)`);
+    anchor.set(k, t);
+  }
+  const name = k => `${st[k].i + 1}.${st[k].step}`;
+  if (anchor.has(0) && anchor.get(0) !== 0) throw new Error(`timings: the video starts with ${name(0)} at 0 s (got ${anchor.get(0)}); lead-in silence belongs to its hold: give the NEXT state a later start`);
+  anchor.set(0, 0);
+  const marks = [...anchor.entries()].sort((a, b) => a[0] - b[0]);
+  for (let m = 1; m < marks.length; m++) if (marks[m][1] <= marks[m - 1][1]) throw new Error(`timings: ${name(marks[m][0])} (${marks[m][1]} s) must start after ${name(marks[m - 1][0])} (${marks[m - 1][1]} s)`);
+  const N = st.length, last = marks.at(-1);
+  let end = T.end ?? o.defaultEnd;
+  if (end == null) end = last[1] + st.slice(last[0]).reduce((a, s) => a + s.tr + s.nat, 0);   // from the last given state on, the deck plays as it would
+  if (end <= last[1]) throw new Error(`timings: "end" (${end} s) must come after the last state (${name(last[0])} at ${last[1]} s)`);
+  marks.push([N, end]);
+  const holds = new Array(N), start = new Array(N), warnings = [], set = new Set(anchor.keys());
+  let cursor = 0;
+  for (let m = 0; m < marks.length - 1; m++) {
+    const [ka] = marks[m], [kb, tb] = marks[m + 1], idx = Array.from({ length: kb - ka }, (_, q) => ka + q);
+    const budget = tb - cursor, fixed = idx.reduce((a, k) => a + st[k].tr, 0);
+    // spread what is left after the transitions over the holds, by their natural lengths, none under MIN_HOLD
+    const free = new Set(idx); let rest = budget - fixed;
+    for (;;) {
+      const W = [...free].reduce((a, k) => a + st[k].nat, 0), share = k => rest * (W ? st[k].nat / W : 1 / free.size);
+      const low = [...free].filter(k => share(k) < MIN_HOLD);
+      if (!low.length) { for (const k of free) holds[k] = share(k); break; }
+      for (const k of low) { holds[k] = MIN_HOLD; rest -= MIN_HOLD; free.delete(k); }
+      if (!free.size) break;
+    }
+    for (const k of idx) if (holds[k] <= MIN_HOLD + 1e-9) {
+      warnings.push(`${name(k)} gets only ${holds[k].toFixed(2)} s after its ${st[k].tr ? `${st[k].tr.toFixed(2)} s transition` : 'start'} (the gap it sits in is ${budget.toFixed(2)} s)`);
+    }
+    for (const k of idx) { start[k] = cursor; cursor += st[k].tr + holds[k]; }
+    if (Math.abs(cursor - tb) > 1e-6) warnings.push(`${kb < N ? name(kb) : '"end"'} was asked for at ${tb.toFixed(2)} s and comes at ${cursor.toFixed(2)} s: the states before it do not fit`);
+  }
+  return { states: st.map((s, k) => ({ i: s.i, step: s.step, start: start[k], tr: s.tr, hold: holds[k], set: set.has(k) })), holds, end: cursor, warnings };
+}
+
+// the timeline as the deck plays it, in the shape of resolveTimings' result
+function naturalTiming(info) {
+  const states = []; let tr = null;
+  for (const g of info.tl.segs) {
+    if (g.kind === 'tr') { tr = g; continue; }
+    states.push({ i: g.i, step: g.step, start: tr ? tr.t0 : g.t0, tr: tr ? tr.dur : 0, hold: g.dur, set: false }); tr = null;
+  }
+  return { states, holds: states.map(s => s.hold), end: info.tl.duration, warnings: [] };
+}
+
+function warnList(list, prefix) {   // a file that is far too tight warns for every state: show the first few
+  for (const w of list.slice(0, 6)) console.warn(prefix + w);
+  if (list.length > 6) console.warn(`${prefix}... and ${list.length - 6} more`);
+}
+
+const fmtTimeShort = s => { const t = Math.round(s * 10) / 10; return `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`; };
+
+function printTiming(t, deck) {
+  console.log('state  slide         start     transition  hold');
+  for (const s of t.states) console.log(`${`${s.i + 1}.${s.step}`.padEnd(6)} ${String(deck[s.i].id).slice(0, 12).padEnd(12)} ${s.start.toFixed(2).padStart(7)}s  ${s.tr ? s.tr.toFixed(2).padStart(6) + 's  ' : '        -  '} ${s.hold.toFixed(2).padStart(6)}s  ${s.set ? '' : '(between two given states)'}`);
+  console.log(`end ${t.end.toFixed(2)} s (${fmtTimeShort(t.end)})`);
+}
+
+// A starter timings file: each slide takes its speaker notes' word count at wpm words per minute plus a pause,
+// but never less than its transitions and 1 s per step. The steps of a slide split its time evenly.
+function timingsFromNotes(info, wpm, pause) {
+  const segs = info.tl.segs, slides = info.deck, cps = wpm / 60;
+  const natBlock = i => segs.filter(g => (g.kind === 'hold' && g.i === i) || (g.kind === 'tr' && g.to.i === i)).reduce((a, g) => a + g.dur, 0);
+  const trOf = i => segs.filter(g => g.kind === 'tr' && g.to.i === i).reduce((a, g) => a + g.dur, 0);
+  const rows = []; let t = 0; const states = {};
+  slides.forEach((s, i) => {
+    const words = (s.notes.match(/\S+/g) || []).length;
+    const window = Math.max(words ? words / cps + pause : natBlock(i), trOf(i) + (s.steps + 1));
+    rows.push({ words, window }); states[`${i + 1}.0`] = +t.toFixed(2); t += window;
+  });
+  const end = +t.toFixed(2);
+  const timing = resolveTimings(segs, slides, { states, end }, {});
+  const out = { _comment: 'Start of each state in seconds of the voice-over: slide.step (1-based slide). Edit the numbers, keep the keys; end is the length of the video. See export/README.md.', _wpm: wpm };
+  for (const s of timing.states) out[`${s.i + 1}.${s.step}`] = +s.start.toFixed(1);
+  out.end = +timing.end.toFixed(1);
+  return { json: JSON.stringify(out, null, 2) + '\n', timing, slides: rows };
+}
+
+/* captions: the speaker notes of each slide, cut into cues and spread over the slide's time window */
+function splitCue(s, max) {
+  s = s.trim();
+  if (s.length <= max) return [s];
+  const mid = s.length / 2, best = (re, min = 8) => { let b = -1; for (const m of s.matchAll(re)) { const p = m.index + m[0].length; if (p >= min && s.length - p >= min && (b < 0 || Math.abs(p - mid) < Math.abs(b - mid))) b = p; } return b; };
+  let cut = best(/[,;:–—]\s+/g); if (cut < 0) cut = best(/\s+/g); if (cut < 0) return [s];
+  return [...splitCue(s.slice(0, cut), max), ...splitCue(s.slice(cut), max)];
+}
+function captionCues(deck, timing, from, to) {
+  const cues = [], slideStart = new Map(timing.states.filter(s => s.step === 0).map(s => [s.i, s.start]));
+  deck.forEach((s, i) => {
+    const text = (s.notes || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const a = slideStart.get(i), b = slideStart.get(i + 1) ?? timing.end;
+    const parts = (text.match(/[^.!?…]+(?:[.!?…]+["'”’)\]]*|$)/g) || [text]).flatMap(x => splitCue(x, 84)).filter(x => x.trim());
+    const chars = parts.reduce((n, p) => n + Math.max(p.length, 12), 0), span = Math.max(.5, b - a - .12);
+    let t = a;
+    for (const p of parts) { const d = span * Math.max(p.length, 12) / chars; cues.push({ a: t, b: t + d, text: p.trim() }); t += d; }
+  });
+  return cues.filter(c => c.b > from && c.a < to).map(c => ({ a: Math.max(0, c.a - from), b: Math.min(to, c.b) - from, text: c.text }));
+}
+function writeSrt(file, cues) {
+  const ts = s => { const ms = Math.round(s * 1000), p = (n, w = 2) => String(n).padStart(w, '0'); return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`; };
+  const wrap = s => { if (s.length <= 42) return s; const mid = s.length / 2; let b = -1; for (const m of s.matchAll(/\s/g)) if (b < 0 || Math.abs(m.index - mid) < Math.abs(b - mid)) b = m.index; return b < 0 ? s : `${s.slice(0, b)}\n${s.slice(b + 1)}`; };
+  fs.writeFileSync(file, cues.map((c, k) => `${k + 1}\n${ts(c.a)} --> ${ts(c.b)}\n${wrap(c.text)}\n`).join('\n'));
+  return cues.length;
+}
+
+function probeDuration(file) {
+  const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.resolve(file)], { encoding: 'utf8' });
+  if (r.error) throw new Error('ffprobe not found in PATH (it comes with ffmpeg; --voice needs it)');
+  const d = parseFloat(r.stdout);
+  if (!(d > 0)) throw new Error(`cannot read the duration of ${file}: ${(r.stderr || 'no audio?').trim()}`);
+  return d;
+}
+function measureLoudness(file) {   // EBU R128 integrated loudness and true peak of the finished file
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', path.resolve(file), '-map', '0:a', '-af', 'ebur128=peak=true', '-f', 'null', '-'], { encoding: 'utf8' });
+  const tail = (r.stderr || '').split('Summary:').pop(), I = /I:\s+(-?[\d.]+)\s+LUFS/.exec(tail), P = /Peak:\s+(-?[\d.]+)\s+dBFS/.exec(tail);
+  return I ? { I: I[1], tp: P ? P[1] : '?' } : null;
 }
 
 /* ───────── entry ───────── */

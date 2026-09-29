@@ -34,7 +34,7 @@ Positions of the kicker, title and footer do not move between slides. When they 
 |---|---|---|
 | background | most | `--paper: #f2eee5` |
 | ink | text, main shapes | `--ink: #1c1b18` |
-| muted | labels, axes, secondary text | `--muted: #857f72` |
+| muted | labels, axes, secondary text | `--muted: #6e685c` |
 | rule | grid lines, separators | `--rule: #cbc3b2` |
 | accent | the one thing to look at | `--waste: #dd4428` |
 | second accent | only when it has a meaning | `--saved: #2b7a4b` |
@@ -43,20 +43,51 @@ Rules:
 
 - The accent covers under 10% of a slide and means the same thing everywhere. In the demo, red is always waste and green is always saved; neither is ever decoration.
 - Grey out what is context. A chart with one coloured bar and three grey ones says more than four colours.
-- Text contrast: at least 4.5:1 for body text, 3:1 for 40 px and above. Projectors wash out contrast; test with the lights on.
+- Text contrast: at least 4.5:1 for body text, 3:1 for 40 px and above. Projectors wash out contrast; test with the lights on. `check` measures it (`low-contrast`, 12-export-qa.md).
+- A saturated accent is usually 3 to 4:1 on a light background: fine for a 250 px number, not for a 24 px label. Give small text its own darker variant of the same hue (`--waste-text`, `--saved-text` in the demo) and keep the accent for big numbers, bars and lines. The same goes for the second accent.
+- Text on a filled disc or button needs 4.5:1 against the fill: white on `#dd4428` is 4.05:1, so the demo's numbered discs use the darker text variant as the fill.
 - Light backgrounds survive projectors and PDFs better. Dark decks need higher contrast and fewer thin lines.
 
-Starting palettes (background, ink, muted, accent):
+Starting palettes (background, ink, muted, accent). Muted is at least 4.5:1 on the background in every row; the last column says what the accent may do as text:
 
-| Direction | Background | Ink | Muted | Accent |
-|---|---|---|---|---|
-| Receipt | #f2eee5 | #1c1b18 | #857f72 | #dd4428 |
-| Editorial (template) | #f4f2ee | #16161a | #6f6b63 | #2b4fe0 |
-| Swiss poster | #f1efe9 | #111111 | #7a7a7a | #e3242b |
-| Ledger | #fbfaf5 | #1f2a44 | #7d8597 | #0f7b5f |
-| Blueprint | #17324d | #eaf2f8 | #8fb0c9 | #ffb000 |
-| Terminal | #0f1110 | #d8f3dc | #6b8f71 | #ffd166 |
-| Lab notebook | #fdfcf7 | #22302a | #8a958f | #c44536 |
+| Direction | Background | Ink | Muted | Accent | Accent as text |
+|---|---|---|---|---|---|
+| Receipt | #f2eee5 | #1c1b18 | #6e685c | #dd4428 | 40 px and up (3.7:1); `#ba2100` below |
+| Editorial (template) | #f4f2ee | #16161a | #6f6b63 | #2b4fe0 | any size (5.7:1) |
+| Swiss poster | #f1efe9 | #111111 | #6b6b6b | #e3242b | 40 px and up (4.0:1) |
+| Ledger | #fbfaf5 | #1f2a44 | #6a7284 | #0f7b5f | any size (5.0:1) |
+| Blueprint | #17324d | #eaf2f8 | #8fb0c9 | #ffb000 | any size (7.2:1) |
+| Terminal | #0f1110 | #d8f3dc | #6b8f71 | #ffd166 | any size (13.1:1) |
+| Lab notebook | #fdfcf7 | #22302a | #6b7570 | #c44536 | any size (4.8:1) |
+
+### Generate a palette
+
+Start from one accent and let the script derive the rest in OKLCH, with the contrast rules above guaranteed and measured:
+
+```bash
+node scripts/palette.mjs --accent "#dd4428" --name receipt --html receipt-swatches.html
+node scripts/palette.mjs --accent "#2b4fe0" --bg dark --second "#ffb000"
+node scripts/palette.mjs --accent "#0f7b5f" --bg "#f4f2ee"
+```
+
+`--bg` is `light` (a tinted off-white, the default), `dark` (a tinted near-black) or your own hex; `--second` is `auto` (the accent's hue rotated 125 degrees at the same weight, lightness nudged to keep 3:1) or a hex. It prints CSS variables for `:root` and a table of every role with its WCAG 2 ratio and APCA Lc:
+
+```
+role         hex      OKLCH               vs bg               APCA Lc  rule
+ink          #372a29  L0.300 C0.020 h23   12.02:1             91       >= 7:1        ok
+muted        #736260  L0.512 C0.022 h26   5.03:1              70       >= 4.5:1      ok
+rule         #c6b6b4  L0.789 C0.019 h26   1.71:1              28       decorative
+accent       #dd4428  L0.604 C0.194 h33   3.72:1              59       >= 3:1 large  ok
+accent-text  #ca3113  L0.551 C0.194 h33   4.63:1              66       >= 4.5:1      ok
+```
+
+- Ink is at least 7:1 (it aims for 12:1), muted at least 4.5:1 (it aims for 5:1; 7:1 on dark backgrounds, where WCAG 2 flatters thin light text).
+- `--accent` is your colour untouched. The table says whether it may be text: 4.5:1 and up, any size; 3 to 4.5:1, 40 px and above only; under 3:1, a fill or a line only. `--accent-text` (and `--second-text`) is the same hue darkened on light backgrounds, lightened on dark ones, until it reaches 4.6:1; when the accent already passes it is the accent itself.
+- `--on-accent` is the ink or paper tone that reads best on an accent-coloured fill (pure black or white only when neither does); the same for `--on-second`.
+- The run exits with code 1 when a guarantee cannot be met, for example a mid-grey custom background that cannot carry 7:1 ink.
+- The colour maths (sRGB to OKLab, gamut mapping by chroma, WCAG 2 ratio, APCA SAPC 0.0.98G-4g) is implemented in `scripts/palette.mjs` itself; no dependency. `--json` prints machine-readable output.
+
+Paste the variables into the deck's `:root` and rename them to the deck's own vocabulary (`--paper`, `--waste`). Then run `check`: it is the second opinion, against what is really painted.
 
 ## Density
 
