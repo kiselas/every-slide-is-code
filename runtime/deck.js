@@ -893,9 +893,11 @@ function applyBuild(b, st) {
   if (b.out === st.step) st._end = Math.max(st._end, e0 + b.outDelay + b.dur);
   if (b.dim === st.step) st._end = Math.max(st._end, e0 + .5);
   const lt = b.noIn ? Infinity : stepLT(b.step, st, b.delay);
-  let raw = seg(lt, 0, b.dur), leaving = false;
+  // t - delay - entry is not exactly dur when t = entry + delay + dur (float): a frame drawn at 0.9999999999 would be the last one, because the slide goes idle at t >= _end
+  const snap = p => (p > 1 - 1e-9 ? 1 : p);
+  let raw = snap(seg(lt, 0, b.dur)), leaving = false;
   if (b.out != null) {
-    const ro = seg(stepLT(b.out, st, b.outDelay), 0, b.dur);
+    const ro = snap(seg(stepLT(b.out, st, b.outDelay), 0, b.dur));
     if (ro > 0) { leaving = true; raw = Math.min(raw, 1 - ro); }
   }
   const e = b.curve(raw);
@@ -1357,16 +1359,47 @@ function nextState(i, step) {
   if (i < slides.length - 1) return { i: i + 1, step: 0 };
   return null;
 }
+const PV_TX = {
+  en: { now: 'This slide', next: 'Next', slide: 'Slide', click: 'Click', after: 'Next slide', none: 'No notes for this slide.', end: 'End of the deck',
+    back: '‹ Back', fwd: 'Next ›', reset: 'Click to reset the timer', fsm: 'Smaller notes text', fsp: 'Larger notes text', of: 'of', lastSlide: 'This is the last slide' },
+  ru: { now: 'Этот слайд', next: 'Дальше', slide: 'Слайд', click: 'Клик', after: 'Следующий слайд', none: 'К этому слайду нет заметок.', end: 'Конец презентации',
+    back: '‹ Назад', fwd: 'Вперёд ›', reset: 'Клик — сбросить таймер', fsm: 'Мельче текст заметок', fsp: 'Крупнее текст заметок', of: 'из', lastSlide: 'Это последний слайд' },
+};
+// Speaker notes by step. A block of the notes opens the text for step N when it has data-step="N", the class "click",
+// or starts with the marker ▸ (then it is the step after the previous one). Blocks before the first marker are step 0.
+// More markers than steps merge into the last step, so the presenter view never invents a state the slide does not have.
+function noteSegs(s) {
+  const box = document.createElement('div'); box.innerHTML = s.notes || '';
+  const segs = []; let cur, step = 0;
+  const open = n => { step = Math.max(0, Math.min(s.steps, n)); cur = segs.find(g => g.step === step); if (!cur) { cur = { step, html: '' }; segs.push(cur); } };
+  open(0);
+  for (const n of box.childNodes) {
+    const isEl = n.nodeType === 1;
+    if (!isEl && !n.textContent.trim()) continue;
+    if (isEl && n.dataset.step) open(+n.dataset.step);
+    else if (isEl && (n.classList.contains('click') || /^\s*▸/.test(n.textContent))) open(step + 1);
+    if (isEl) cur.html += n.outerHTML; else { const p = document.createElement('p'); p.textContent = n.textContent.trim(); cur.html += p.outerHTML; }
+  }
+  return segs.filter(g => g.html).sort((a, b) => a.step - b.step);
+}
 function presenterUI() {
   const base = location.href.split('#')[0].split('?')[0];
+  const T = PV_TX[/^ru/i.test(document.documentElement.lang) ? 'ru' : 'en'];
   document.body.classList.add('dk-presenter');
   const ui = el('div', { class: 'dk-pv', html: `
-    <header><span class="dk-pv-timer" title="click to reset">00:00</span><span class="dk-pv-pos"></span>
-      <button data-pv="prev" aria-label="Back">‹ Back</button><button data-pv="next" aria-label="Next">Next ›</button><span class="dk-pv-clock"></span></header>
+    <header><span class="dk-pv-timer" title="${T.reset}">00:00</span>
+      <span class="dk-pv-pos"><b></b><span></span></span><span class="dk-pv-dots"></span>
+      <span class="dk-pv-fs"><button data-pv="fs-" aria-label="${T.fsm}" title="${T.fsm}">A−</button><button data-pv="fs+" aria-label="${T.fsp}" title="${T.fsp}">A+</button></span>
+      <button data-pv="prev" aria-label="${T.back}">${T.back}</button><button data-pv="next" aria-label="${T.fwd}">${T.fwd}</button><span class="dk-pv-clock"></span></header>
     <main>
-      <section class="dk-pv-cur"><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
-      <aside><div class="dk-pv-next"><label>Next</label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></div>
-        <div class="dk-pv-notes"></div></aside>
+      <div class="dk-pv-left">
+        <section class="dk-pv-cur"><label>${T.now}</label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
+        <section class="dk-pv-next"><label class="dk-pv-nl"></label><div class="dk-pv-frame"><iframe tabindex="-1"></iframe></div></section>
+      </div>
+      <div class="dk-pv-right">
+        <section class="dk-pv-pane"><label>${T.now}</label><div class="dk-pv-notes dk-pv-now"></div></section>
+        <section class="dk-pv-pane"><label class="dk-pv-al"></label><div class="dk-pv-notes dk-pv-after"></div></section>
+      </div>
     </main>` }, document.body);
   const [cur, nxt] = ui.querySelectorAll('iframe');
   cur.src = `${base}?embed#${S.i + 1}.${S.step}`;
@@ -1375,27 +1408,57 @@ function presenterUI() {
     cur.addEventListener('load', () => { if (marks.size) post(cur.contentWindow, { a: 'snap', marks: [...marks] }); });
     post(window.opener, { a: 'hello' });
   }
-  const timer = ui.querySelector('.dk-pv-timer'), pos = ui.querySelector('.dk-pv-pos'), clock = ui.querySelector('.dk-pv-clock'), notes = ui.querySelector('.dk-pv-notes');
+  const q = s => ui.querySelector(s);
+  const timer = q('.dk-pv-timer'), clock = q('.dk-pv-clock'), posN = q('.dk-pv-pos b'), posT = q('.dk-pv-pos span'), dots = q('.dk-pv-dots'),
+    nowBox = q('.dk-pv-now'), afterBox = q('.dk-pv-after'), nl = q('.dk-pv-nl'), al = q('.dk-pv-al');
   let t0 = Date.now();
   timer.onclick = () => { t0 = Date.now(); };
-  ui.querySelector('[data-pv=prev]').onclick = () => { prev(); broadcast(); };
-  ui.querySelector('[data-pv=next]').onclick = () => { next(); broadcast(); };
+  q('[data-pv=prev]').onclick = () => { prev(); broadcast(); };
+  q('[data-pv=next]').onclick = () => { next(); broadcast(); };
+  let fs = 26; try { fs = +localStorage.getItem('dk-pv-fs') || fs; } catch (e) { /* storage blocked */ }
+  const setFs = v => { fs = Math.max(16, Math.min(56, v)); ui.style.setProperty('--pv-fs', fs + 'px'); try { localStorage.setItem('dk-pv-fs', fs); } catch (e) { /* storage blocked */ } };
+  q('[data-pv="fs-"]').onclick = () => setFs(fs - 2);
+  q('[data-pv="fs+"]').onclick = () => setFs(fs + 2);
+  setFs(fs);
   const two = n => String(n).padStart(2, '0');
   setInterval(() => {
     const e = Math.floor((Date.now() - t0) / 1000);
     timer.textContent = `${two(Math.floor(e / 60))}:${two(e % 60)}`;
     const d = new Date(); clock.textContent = `${two(d.getHours())}:${two(d.getMinutes())}`;
   }, 250);
-  let nxtKey = '';
+  const tag = g => (g.step ? `${T.click} ${g.step}` : T.slide);
+  const fill = (box, segs, empty) => {
+    box.textContent = ''; box.scrollTop = 0;
+    if (!segs.length) { box.append(el('p', { class: 'dk-pv-none', html: empty })); return []; }
+    return segs.map(g => el('div', { class: 'dk-pv-seg', html: (segs.length > 1 ? `<span class="dk-pv-tag">${tag(g)}</span>` : '') + g.html, 'data-step': g.step }, box));
+  };
+  let nowI = -1, nowSegs = [], nxtKey = '', afterI = -2, lastOn = -2;
   const refresh = () => {
     const s = slides[S.i], n = nextState(S.i, S.step);
-    pos.textContent = `${S.i + 1} / ${slides.length}${s.steps ? ` · step ${S.step + 1} of ${s.steps + 1}` : ''} · ${s.title}`;
-    notes.innerHTML = s.notes || '<em>No notes for this slide.</em>';
+    posN.textContent = `${S.i + 1} / ${slides.length}`; posT.textContent = s.title;
+    dots.innerHTML = s.steps ? Array.from({ length: s.steps + 1 }, (_, k) => `<i class="${k <= S.step ? 'on' : ''}"></i>`).join('') : '';
+    dots.title = s.steps ? `${T.click} ${S.step} ${T.of} ${s.steps}` : '';
+    if (nowI !== S.i) { nowI = S.i; lastOn = -2; nowSegs = fill(nowBox, noteSegs(s), T.none); }
+    let on = -1;   // the text being spoken now: the last segment that has started
+    nowSegs.forEach((e, k) => { if (+e.dataset.step <= S.step) on = k; });
+    nowSegs.forEach((e, k) => { e.className = 'dk-pv-seg ' + (k < on ? 'done' : k === on ? 'on' : 'todo'); });
+    if (nowSegs.length > 1 && on !== lastOn) {
+      lastOn = on;
+      const target = on >= 0 ? nowSegs[on] : null;
+      nowBox.scrollTo({ top: target ? Math.max(0, target.offsetTop - 6) : 0, behavior: 'smooth' });
+    }
+    const ns = slides[S.i + 1];
+    if (afterI !== S.i) {
+      afterI = S.i;
+      al.textContent = ns ? `${T.after} · ${S.i + 2} · ${ns.title}` : T.lastSlide;
+      fill(afterBox, ns ? noteSegs(ns) : [], ns ? T.none : T.end);
+    }
     const key = n ? `${n.i + 1}.${n.step}` : 'end';
+    nl.textContent = !n ? T.end : n.i === S.i ? `${T.next} · ${T.click} ${n.step}` : `${T.next} · ${T.slide} ${n.i + 1}`;
     if (key !== nxtKey) {
       nxtKey = key;
       if (n) { nxt.removeAttribute('srcdoc'); nxt.src = `${base}?embed&rest#${key}`; }
-      else nxt.srcdoc = '<body style="margin:0;height:100vh;display:grid;place-items:center;background:#000;color:#777;font:24px system-ui">End of deck</body>';
+      else nxt.srcdoc = `<body style="margin:0;height:100vh;display:grid;place-items:center;background:#000;color:#777;font:24px system-ui">${T.end}</body>`;
     }
     post(cur.contentWindow, { i: S.i, step: S.step });
   };
