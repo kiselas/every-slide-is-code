@@ -59,3 +59,9 @@ Short rules. The details are in the neighbouring files.
 36. After every version run `node export/deck.mjs check deck.html` and `sheet`, open the sheet, describe what you see, then fix by slide and step number.
 37. Check at least one transition with `strip` when you add or change it.
 38. Numbers in an invented deck are labelled as illustrative on the title slide. Never present made-up figures as real data.
+
+## Long decks, code, effects
+39. Long decks start as a `SCRIPT.md` table with a thesis, a spine, a through-line that reverses once, and a last slide that returns to the first image; check it with `scripts/plan.mjs` (`--check`, `--animatic`) before any slide code (03-story.md).
+40. Code slides: 8-15 lines per state, 24 px minimum, states or line focus instead of scrolling; run `--code-cache` before `bundle` (14-code-slides.md).
+41. Kinetic text (`chars`, `tracking`, `scramble`, `flip`) and the statement grammar (`data-say`: setup small, payoff large, at most 8 words) only where the wording carries the meaning. Grain and other ambient effects are optional, frozen in exports, and must not keep still slides from going idle (`Deck.fx`, 10-stage.md).
+42. After runtime or transition changes run `npm test` and `npm run test:browser`: determinism, transition end frames, no `Math.random`, idle rendering.

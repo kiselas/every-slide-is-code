@@ -1,3 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stale prices: a cache invalidation postmortem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=block">
+<style id="deck-kit-css">
+/*! deck-kit runtime styles · MIT. Mechanics only: the look of a deck lives in its own <style>. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-letterbox, #000); }
+.deck { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; contain: layout paint; }
+.dk-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.dk-layer { position: absolute; inset: 0; display: none; z-index: 0; backface-visibility: hidden; }
+.dk-layer.is-on { display: block; }
+.slide { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; display: none; contain: layout paint style; }
+.dk-layer.is-on > .slide { display: block; }
+.slide > .notes { display: none !important; }
+.slide [data-anim], .slide [data-step], .slide [data-stagger] > * { transform-box: fill-box; transform-origin: center; }
+.slide [data-anim="count"] { font-variant-numeric: tabular-nums; }
+.dk-mask-i { display: inline-block; will-change: transform; }
+.dk-caret::after { content: ''; display: inline-block; width: .07em; height: .95em; margin-left: .05em; vertical-align: -.1em; background: currentColor; }
+.dk-highlight { background-image: linear-gradient(transparent 56%, var(--dk-mark, #ffe066) 56%, var(--dk-mark, #ffe066) 90%, transparent 90%);
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.dk-strike { background-image: linear-gradient(transparent 50%, var(--dk-strike, currentColor) 50%, var(--dk-strike, currentColor) calc(50% + .08em), transparent calc(50% + .08em));
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+/* kinetic text: chars, tracking, scramble (characters in nowrap words), flip (split-flap). Metrics are fixed in init; nothing reflows. */
+.dk-w { display: inline-block; white-space: nowrap; }
+.dk-c { display: inline-block; white-space: pre; }
+.dk-scr .dk-c { text-align: center; }
+.dk-flip { display: inline-block; position: relative; white-space: nowrap; vertical-align: baseline; }
+.dk-fl { position: absolute; left: 0; right: 0; top: 0; visibility: hidden; transform-origin: 50% 50%; backface-visibility: hidden; }
+.dk-fl-t { clip-path: inset(-40% -10% 50% -10%); }
+.dk-fl-b { clip-path: inset(50% -10% -40% -10%); }
+.dk-fl-h { top: 50%; height: 0; border-top: 2px solid currentColor; clip-path: none; }
+
+/* statements: data-say="Setup:|*payoff*" (or Deck.say). The element's font size is the payoff; theme with the custom properties. */
+.dk-say { text-wrap: balance; }
+.dk-say .say-s { display: block; margin: 0 0 var(--dk-say-gap, .16em); font-size: max(var(--dk-say-setup-size, .36em), 26px); line-height: 1.2;
+  font-weight: var(--dk-say-setup-weight, inherit); letter-spacing: var(--dk-say-setup-tracking, .02em); text-transform: var(--dk-say-setup-transform, none);
+  font-family: var(--dk-say-setup-font, inherit); color: var(--dk-say-setup, var(--muted, inherit)); }
+.dk-say .pay { display: block; font-style: normal; font-size: var(--dk-say-pay-size, 1em); line-height: var(--dk-say-pay-lh, 1.02);
+  font-weight: var(--dk-say-pay-weight, inherit); color: var(--dk-say-pay, var(--accent, currentColor)); }
+/* the small caption under a claim: a source or the arithmetic behind it */
+.proof { margin: .9em 0 0; max-width: var(--dk-proof-width, 62ch); font-size: var(--dk-proof-size, 26px); line-height: 1.35; letter-spacing: .01em;
+  font-family: var(--dk-proof-font, inherit); color: var(--dk-proof, var(--muted, inherit)); font-variant-numeric: tabular-nums; }
+
+.dk-fx { position: absolute; inset: 0; z-index: 51; display: none; pointer-events: none; }
+.dk-morph { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.dk-morph > * { will-change: transform, opacity; }
+.dk-veil { position: absolute; inset: 0; z-index: 50; pointer-events: none; opacity: 0; }
+.dk-blackout { position: absolute; inset: 0; z-index: 90; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; }
+.dk-blackout.is-on { opacity: 1; }
+.dk-progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 6px; z-index: 60; transform-origin: 0 50%;
+  background: var(--dk-progress, currentColor); opacity: .5; transform: scaleX(0); }
+.dk-number { position: absolute; right: 56px; bottom: 36px; z-index: 60; font: 500 20px/1 var(--dk-number-font, ui-monospace, monospace);
+  color: var(--dk-number, currentColor); opacity: .55; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.dk-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.dk-mode-live.dk-idle, .dk-mode-live.dk-idle * { cursor: none !important; }
+.dk-mode-render *, .dk-mode-embed * { cursor: none !important; }
+
+/* overview */
+.dk-overview .deck { background: var(--dk-overview-bg, #1b1b1b) !important; }
+.dk-overview .dk-stage, .dk-overview .dk-progress, .dk-overview .dk-number { display: none; }
+.dk-overview .dk-layer { cursor: pointer; outline: 2px solid rgba(255,255,255,.08); }
+.dk-overview .dk-layer.dk-ov-sel { outline: 14px solid var(--dk-ov-accent, #ffd23f); z-index: 2; }
+
+/* help */
+.dk-help { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(0,0,0,.55);
+  font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; color: #111; }
+.dk-help.is-on { display: grid; }
+.dk-help > div { background: #fff; padding: 24px 30px 18px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); max-width: min(760px, 92vw); }
+.dk-help h3 { margin: 0 0 12px; font-size: 18px; }
+.dk-help-cols { display: flex; flex-wrap: wrap; gap: 8px 36px; }
+.dk-help caption { text-align: left; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #888; padding-bottom: 4px; }
+.dk-help td { padding: 3px 14px 3px 0; vertical-align: top; } .dk-help td:first-child { color: #555; white-space: nowrap; }
+.dk-help p { margin: 14px 0 0; color: #666; font-size: 13px; }
+kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px solid rgba(127,127,127,.45); border-bottom-width: 2px; border-radius: 4px;
+  font: 600 .85em/1.5 ui-monospace, monospace; text-align: center; }
+
+/* on-screen controls (live mode). Theme with --dk-ui-bg / --dk-ui-fg / --dk-ui-accent. */
+.dk-ui { position: fixed; left: 50%; bottom: 18px; z-index: 80; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; font: 500 14px/1 ui-sans-serif, system-ui, sans-serif; color: var(--dk-ui-fg, #f4f4f4);
+  width: min(760px, calc(100vw - 32px)); padding: 6px 6px 6px; box-sizing: border-box; border-radius: 16px;
+  background: var(--dk-ui-bg, rgba(22,22,24,.88)); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(8px); }
+.dk-ui-on .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dk-scrub { display: flex; gap: 3px; height: 16px; align-items: center; padding: 0 6px 2px; }
+.dk-seg { flex: 1; height: 16px; padding: 6px 0; border: 0; background: none; cursor: pointer; position: relative; }
+.dk-seg::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-track, rgba(255,255,255,.28)); }
+.dk-seg i { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-accent, #ffd23f); transform-origin: 0 50%; transform: scaleX(0); }
+.dk-seg:hover::before { background: rgba(255,255,255,.6); }
+.dk-bar { display: flex; align-items: center; gap: 4px; }
+.dk-b { position: relative; width: 40px; height: 40px; flex: none; border: 0; border-radius: 10px; background: none; color: inherit; cursor: pointer;
+  display: grid; place-items: center; font: 600 17px/1 ui-sans-serif, system-ui, sans-serif; }
+.dk-b svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-b:hover { background: rgba(255,255,255,.12); } .dk-b:disabled { opacity: .3; cursor: default; background: none; }
+.dk-b-next { background: rgba(255,255,255,.14); }
+.dk-where { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.dk-num { font-variant-numeric: tabular-nums; opacity: .7; flex: none; }
+.dk-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dk-steps { display: flex; gap: 5px; flex: none; }
+.dk-steps i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .55; }
+.dk-steps i.on { background: currentColor; opacity: 1; }
+.dk-sep { width: 1px; height: 24px; background: rgba(255,255,255,.2); margin: 0 4px; }
+[data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; padding: 6px 9px; border-radius: 7px; background: #111; color: #fff; font: 500 13px/1 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-seg[data-tip]:hover::after { bottom: 18px; }
+.dk-edge { position: fixed; top: 50%; z-index: 70; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--dk-ui-bg, rgba(22,22,24,.7)); color: var(--dk-ui-fg, #fff); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.dk-edge svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-edge-l { left: 18px; } .dk-edge-r { right: 18px; }
+.dk-edge-l-on .dk-edge-l, .dk-edge-r-on .dk-edge-r { opacity: .8; }
+.dk-edge-l-on, .dk-edge-r-on { cursor: pointer; }
+.dk-hint { position: fixed; left: 50%; top: 22px; z-index: 81; transform: translate(-50%, -8px); opacity: 0; transition: opacity .4s, transform .4s;
+  padding: 10px 16px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.86)); color: var(--dk-ui-fg, #f4f4f4);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; pointer-events: none; white-space: nowrap; }
+.dk-hint.is-on { opacity: 1; transform: translate(-50%, 0); }
+.dk-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%) scale(.96); opacity: 0; transition: opacity .2s, transform .2s;
+  padding: 12px 18px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.9)); color: var(--dk-ui-fg, #fff);
+  font: 600 16px/1.3 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-toast.is-on { opacity: 1; transform: translate(-50%, -50%); }
+.dk-hud { position: fixed; left: 8px; top: 8px; z-index: 99; padding: 5px 8px; border-radius: 6px; background: rgba(0,0,0,.75); color: #9f9;
+  font: 12px/1.2 ui-monospace, monospace; pointer-events: none; }
+.dk-idle .dk-ui, .dk-idle .dk-edge { opacity: 0 !important; pointer-events: none; }
+.dk-warm .dk-layer { visibility: hidden !important; }
+.dk-ov-hint { position: fixed; left: 50%; top: 16px; z-index: 81; transform: translateX(-50%); color: rgba(255,255,255,.7);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+.dk-ov-cap { position: absolute; z-index: 3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: rgba(255,255,255,.75);
+  font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; line-height: 1.2; pointer-events: none; }
+.dk-overview .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .dk-ui, .dk-hint, .dk-toast, .dk-edge { transition: none; } }
+
+/* presenter view */
+body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
+.dk-presenter .deck { display: none; }
+.dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.dk-pv header { display: flex; gap: 28px; align-items: baseline; padding: 14px 22px; border-bottom: 1px solid #2a2a2a; }
+.dk-pv-timer { font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dk-pv-pos { flex: 1; color: #aaa; }
+.dk-pv header button { background: #262626; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  font: 600 15px/1 ui-sans-serif, system-ui, sans-serif; } .dk-pv header button:hover { background: #333; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
+.dk-pv main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding: 22px; min-height: 0; }
+.dk-pv aside { display: grid; grid-template-rows: auto 1fr; gap: 18px; min-height: 0; }
+.dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+.dk-pv-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+.dk-pv-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.dk-pv-notes { overflow: auto; font-size: 24px; line-height: 1.45; color: #f2f2f2; padding-right: 8px; }
+.dk-pv-notes p { margin: 0 0 .7em; } .dk-pv-notes em { color: #777; }
+
+/* print (vector PDF export) */
+.dk-printing, .dk-printing body { height: auto; overflow: visible; background: #fff; }
+.dk-printing .deck:not(.dk-print), .dk-printing .dk-help { display: none !important; }
+.deck.dk-print { position: static; transform: none; width: auto; height: auto; overflow: visible; contain: none; background: none; }
+.dk-page { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+.dk-page:last-child { break-after: auto; page-break-after: auto; }
+.dk-page > .dk-page-stage { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dk-page > .dk-layer { display: block; }
+@media print { html, body { overflow: visible !important; height: auto !important; } }
+</style>
+<style id="deck-kit-code-css">
+/*! deck-kit code plugin styles · MIT. Palette: derived from the deck's own variables (--bg --ink --muted --accent, optional --accent-2);
+   override any --dk-code-* in the deck's <style>, or pick a preset with data-code-theme="light|dark" on a block or on .deck. */
+:root {
+  --dk-code-size: 28px;          /* font size of code; the block shrinks it to fit, never below data-code-min (24px) */
+  --dk-code-lh: 1.5;
+  --dk-code-pad-x: 40px;
+  --dk-code-pad-y: 30px;
+  --dk-code-radius: 16px;
+  --dk-code-font: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+
+  --dk-code-fg: var(--ink, #1f2328);
+  --dk-code-bg: color-mix(in srgb, var(--ink, #1f2328) 6%, var(--bg, #ffffff));
+  --dk-code-line: color-mix(in srgb, var(--ink, #1f2328) 14%, var(--bg, #ffffff));
+  --dk-code-comment: var(--muted, #6b7280);
+  --dk-code-keyword: var(--accent, #2b4fe0);
+  --dk-code-string: color-mix(in srgb, var(--accent-2, var(--accent, #2b4fe0)) 62%, var(--ink, #1f2328));
+  --dk-code-number: var(--dk-code-string);
+  --dk-code-const: var(--dk-code-string);
+  --dk-code-function: color-mix(in srgb, var(--accent, #2b4fe0) 45%, var(--ink, #1f2328));
+  --dk-code-type: color-mix(in srgb, var(--accent-2, var(--accent, #2b4fe0)) 35%, var(--ink, #1f2328));
+  --dk-code-prop: var(--dk-code-fg);
+  --dk-code-punct: color-mix(in srgb, var(--dk-code-fg) 62%, var(--dk-code-bg));
+  --dk-code-param: var(--dk-code-fg);
+  --dk-code-tag: var(--dk-code-keyword);
+  --dk-code-attr: var(--dk-code-function);
+  --dk-code-ins: var(--accent, #2b4fe0);          /* diff: added   (blue-ish, never green alone) */
+  --dk-code-del: var(--accent-2, #b45309);        /* diff: removed (amber-ish, never red alone)  */
+}
+.deck[data-code-theme="light"], .dk-code[data-code-theme="light"] {
+  --dk-code-fg: #1f2328; --dk-code-bg: #f4f4f1; --dk-code-line: #dcdcd6; --dk-code-comment: #667085; --dk-code-keyword: #6b3fc7;
+  --dk-code-string: #0b6b4d; --dk-code-number: #a94f00; --dk-code-const: #a94f00; --dk-code-function: #0b5cad; --dk-code-type: #8a5a00;
+  --dk-code-prop: #1f2328; --dk-code-punct: #59636e; --dk-code-param: #1f2328; --dk-code-tag: #0b5cad; --dk-code-attr: #6b3fc7;
+  --dk-code-ins: #0b5cad; --dk-code-del: #a94f00;
+}
+.deck[data-code-theme="dark"], .dk-code[data-code-theme="dark"] {
+  --dk-code-fg: #e8e8e6; --dk-code-bg: #16181d; --dk-code-line: #2c303a; --dk-code-comment: #8d95a3; --dk-code-keyword: #c8adff;
+  --dk-code-string: #9dd8b3; --dk-code-number: #ffb86b; --dk-code-const: #ffb86b; --dk-code-function: #7fb8ff; --dk-code-type: #f2c879;
+  --dk-code-prop: #e8e8e6; --dk-code-punct: #9ba4b3; --dk-code-param: #e8e8e6; --dk-code-tag: #7fb8ff; --dk-code-attr: #c8adff;
+  --dk-code-ins: #7fb8ff; --dk-code-del: #ffb86b;
+}
+
+.dk-code { display: block; position: relative; box-sizing: border-box; margin: 0; padding: 0; border-radius: var(--dk-code-radius);
+  background: var(--dk-code-bg); color: var(--dk-code-fg); font: 400 var(--dk-code-size) / var(--dk-code-lh) var(--dk-code-font);
+  font-variant-ligatures: none; font-kerning: none; letter-spacing: 0; white-space: pre; tab-size: 2; text-align: left; text-transform: none; }
+.dk-code-bar { display: flex; align-items: center; padding: 14px 24px 0; }
+.dk-code-file { display: inline-block; padding: 6px 16px; border-radius: 8px; background: var(--dk-code-line); color: var(--dk-code-fg);
+  font: 500 22px/1.3 var(--dk-code-font); letter-spacing: 0; }
+.dk-code-body { position: relative; }
+.dk-code-tok, .dk-code-num, .dk-code-sign, .dk-code-band, .dk-code-caret { position: absolute; left: 0; top: 0; white-space: pre; }
+.dk-code-tok[data-r="comment"] { color: var(--dk-code-comment); font-style: italic; }
+.dk-code-tok[data-r="keyword"] { color: var(--dk-code-keyword); }
+.dk-code-tok[data-r="string"] { color: var(--dk-code-string); }
+.dk-code-tok[data-r="number"] { color: var(--dk-code-number); }
+.dk-code-tok[data-r="const"] { color: var(--dk-code-const); }
+.dk-code-tok[data-r="function"] { color: var(--dk-code-function); }
+.dk-code-tok[data-r="type"] { color: var(--dk-code-type); }
+.dk-code-tok[data-r="prop"] { color: var(--dk-code-prop); }
+.dk-code-tok[data-r="punct"] { color: var(--dk-code-punct); }
+.dk-code-tok[data-r="param"] { color: var(--dk-code-param); }
+.dk-code-tok[data-r="tag"] { color: var(--dk-code-tag); }
+.dk-code-tok[data-r="attr"] { color: var(--dk-code-attr); }
+.dk-code-tok[data-r="ins"] { color: var(--dk-code-ins); }
+.dk-code-tok[data-r="del"] { color: var(--dk-code-del); }
+.dk-code-num { text-align: right; color: var(--dk-code-comment); }
+.dk-code-sign { font-weight: 700; }
+.dk-code-sign[data-k="ins"] { color: var(--dk-code-ins); }
+.dk-code-sign[data-k="del"] { color: var(--dk-code-del); }
+.dk-code-band { width: 100%; }
+.dk-code-band[data-k="ins"] { background: color-mix(in srgb, var(--dk-code-ins) 15%, transparent); box-shadow: inset 6px 0 0 var(--dk-code-ins); }
+.dk-code-band[data-k="del"] { background: color-mix(in srgb, var(--dk-code-del) 15%, transparent); box-shadow: inset 6px 0 0 var(--dk-code-del); }
+.dk-code-caret { width: .11em; background: var(--dk-code-fg); visibility: hidden; }
+.dk-code-mark { display: none; }
+</style>
+<style>
+/* Theme: an engineering log. Amber always means "stale / wrong", blue always means "fixed / new".
+   The code palette is derived from these variables (runtime/code.css); only the font is set by hand. */
+:root {
+  --bg: #f4f2ec; --ink: #17181a; --muted: #67655e; --line: #d6d2c6; --accent: #1d4ed8; --accent-2: #b45309; --accent-soft: #dbe4fb;
+  --display: 'IBM Plex Sans', system-ui, sans-serif; --text: 'IBM Plex Sans', system-ui, sans-serif;
+  --dk-code-font: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; --dk-code-size: 32px;
+  --dk-mark: var(--accent-soft); --dk-letterbox: #0e0e10; --dk-progress: var(--accent);
+}
+.deck { background: var(--bg); color: var(--ink); font-family: var(--text); }
+.slide { padding: 96px 150px; }
+.kicker { font: 600 22px/1 var(--text); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 28px; }
+h1 { font: 600 132px/1 var(--display); letter-spacing: -.03em; margin: 0; max-width: 1500px; }
+h2 { font: 600 64px/1.08 var(--display); letter-spacing: -.02em; margin: 0 0 36px; max-width: 1620px; }
+.lede { font: 400 38px/1.35 var(--text); color: var(--muted); max-width: 1150px; margin: 0; }
+.foot { position: absolute; left: 150px; bottom: 90px; font: 500 22px/1 var(--text); color: var(--muted); }
+.stale { color: var(--accent-2); } .fixed { color: var(--accent); }
+.chart text { font: 500 24px var(--text); fill: var(--muted); }
+.chart .val { font: 600 28px var(--text); fill: var(--ink); }
+.chart .axis { stroke: var(--line); stroke-width: 2; }
+.node rect { fill: #fff; stroke: var(--ink); stroke-width: 2.5; }
+.node text { font: 500 30px var(--dk-code-font); fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+.edge { fill: none; stroke: var(--ink); stroke-width: 3; }
+.note { font: 500 26px var(--text); fill: var(--muted); }
+.note.bad { fill: var(--accent-2); font-weight: 600; }
+.close-line { font: 600 34px/1.3 var(--text); max-width: 1200px; margin: 56px 0 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="deck" data-transition="push" data-chrome="progress,number">
+
+  <section class="slide" id="title" data-transition="fade">
+    <p class="kicker" data-anim="fade">Postmortem · price cache</p>
+    <h1 data-anim="mask">Stale prices lived for eleven minutes</h1>
+    <p class="lede" style="margin-top:56px" data-anim="rise" data-delay=".5">How a two-line invalidation bug hid behind a sixty-second TTL, and what the fix looks like in code.</p>
+    <p class="foot" data-anim="fade" data-delay=".9">An illustrative case with invented numbers · Platform team</p>
+    <aside class="notes"><p>Open with the symptom, not the code: customers saw yesterday's price for about eleven minutes after every bulk import. The numbers in this deck are made up to tell a realistic story.</p></aside>
+  </section>
+
+  <!-- Line focus: one block, three steps. Step 0 shows the whole function; each click lights one path. -->
+  <section class="slide" id="read-path">
+    <p class="kicker">The read path</p>
+    <h2 data-fit="2">Every price read trusts the cache for sixty seconds</h2>
+<pre data-code="ts" data-file="price-cache.ts" data-numbers data-lines="*|5-6|8-10">
+const TTL = 60_000;
+const cache = new Map&lt;string, Entry&gt;();
+
+export async function getPrice(sku: string): Promise&lt;number&gt; {
+  const hit = cache.get(sku);
+  if (hit &amp;&amp; hit.expires &gt; Date.now()) return hit.value;
+
+  const value = await db.price(sku);
+  cache.set(sku, { value, expires: Date.now() + TTL });
+  return value;
+}
+</pre>
+    <aside class="notes"><p>Step 0: the whole function, it is small. Step 1: the fast path, a fresh entry is returned without asking the database. Step 2: the slow path refills the entry for another sixty seconds. Nothing here can be wrong on its own; the bug is in who else writes prices.</p></aside>
+  </section>
+
+  <section class="slide" id="writers">
+    <p class="kicker">Who writes prices</p>
+    <h2 data-fit="2">The bulk import writes to the database and never tells the cache</h2>
+    <svg class="chart" width="1620" height="500" viewBox="0 0 1620 500"></svg>
+    <aside class="notes"><p>Two paths touch the price. Shoppers read through the cache. The nightly and ad-hoc bulk import writes straight to Postgres. Click once to see the edge that does not exist: nothing invalidates the entry, so the cache keeps refilling stale values from replicas that lag.</p></aside>
+  </section>
+
+  <!-- Magic move: three code states in one block. Shared tokens glide, new ones fade in, removed ones fade out. -->
+  <section class="slide" id="fix">
+    <p class="kicker">The fix</p>
+    <h2 data-fit="2">The fix lives in the writer, not in the reader</h2>
+    <div data-code="ts" data-file="import-prices.ts" data-numbers>
+<pre data-code-step>
+export async function importPrices(rows: Row[]) {
+  for (const row of rows) {
+    await db.upsertPrice(row.sku, row.value);
+  }
+}
+</pre>
+<pre data-code-step data-lines="4-5">
+export async function importPrices(rows: Row[]) {
+  for (const row of rows) {
+    await db.upsertPrice(row.sku, row.value);
+    cache.delete(row.sku);
+  }
+}
+</pre>
+<pre data-code-step>
+export async function importPrices(rows: Row[]) {
+  await db.upsertPrices(rows);
+  await bus.publish('price.changed', rows.map((r) =&gt; r.sku));
+}
+
+bus.subscribe('price.changed', (skus) =&gt; skus.forEach((s) =&gt; cache.delete(s)));
+</pre>
+    </div>
+    <aside class="notes"><p>Step 0 is the bug: the loop writes and forgets. Step 1: the obvious fix, delete the key. It works on one node only. Step 2: batch the write and publish one event that every node subscribes to. Watch how the function header and the delete call keep their place while the loop turns into a batch.</p></aside>
+  </section>
+
+  <!-- Diff mode: a sign column carries the meaning, so the colours can be blue and amber instead of green and red. -->
+  <section class="slide" id="patch">
+    <p class="kicker">The patch</p>
+    <h2 data-fit="2">The patch swaps a loop for one batch and one event</h2>
+<pre data-code="ts" data-file="import-prices.ts" data-diff data-lines="*|2-4|5-6|8-9">
+  export async function importPrices(rows: Row[]) {
+-   for (const row of rows) {
+-     await db.upsertPrice(row.sku, row.value);
+-   }
++   await db.upsertPrices(rows);
++   await bus.publish('price.changed', rows.map((r) =&gt; r.sku));
+  }
++
++ bus.subscribe('price.changed', (skus) =&gt; skus.forEach((s) =&gt; cache.delete(s)));
+</pre>
+    <aside class="notes"><p>Minus is amber, plus is blue, and both carry a sign in the margin, so the slide still reads in greyscale and for colour-blind viewers. Click through: what goes away, what replaces it, and the subscriber that closes the loop.</p></aside>
+  </section>
+
+  <!-- Deterministic typing: each step types only what is new, in reading order. Dark preset for contrast with the light deck. -->
+  <section class="slide" id="test">
+    <p class="kicker">The regression test</p>
+    <h2 data-fit="2">A test pins it: warm the cache, import, read again</h2>
+<pre data-code="ts" data-code-theme="dark" data-file="price-cache.test.ts" data-code-cursor>
+test('bulk import invalidates cached prices', async () =&gt; {
+  await getPrice('sku-1');                        // warm the cache
+  await importPrices([{ sku: 'sku-1', value: 9 }]);
+---
+test('bulk import invalidates cached prices', async () =&gt; {
+  await getPrice('sku-1');                        // warm the cache
+  await importPrices([{ sku: 'sku-1', value: 9 }]);
+  expect(await getPrice('sku-1')).toBe(9);        // failed for eleven minutes
+});
+</pre>
+    <aside class="notes"><p>Typing is deterministic: it is driven by the build progress, not by a timer, so a jump or an export shows the same text. First the setup, then the assertion that used to return the old price.</p></aside>
+  </section>
+
+  <section class="slide" id="result" data-transition="fade">
+    <p class="kicker">The result · illustrative data</p>
+    <h2 data-fit="2">Stale reads fell from eleven minutes to under one</h2>
+    <svg class="chart" width="1620" height="560" viewBox="0 0 1620 560"></svg>
+    <aside class="notes"><p>Maximum age of a served price after each of twelve bulk imports, in minutes. The first six are before the fix, the last six after. The data is invented for this example.</p></aside>
+  </section>
+
+  <section class="slide" id="close" data-transition="dip">
+    <p class="kicker">The ask</p>
+    <h1 data-anim="mask" style="font-size:112px">Invalidate at the writer, for every cache we own</h1>
+    <p class="close-line" data-anim="rise" data-delay=".5">Prices are done. Inventory and promotions next, by the end of the quarter.</p>
+    <aside class="notes"><p>The decision: adopt writer-side invalidation as the default for every cache, and review the two remaining caches this quarter.</p></aside>
+  </section>
+
+</div>
+<script id="deck-kit-js">
 /*! deck-kit runtime · every slide is code · MIT
  * The whole deck is a pure function of (slide, step, t): no animation state is
  * accumulated between frames. That gives exact rest frames for PDF/PPTX, a
@@ -1614,3 +1999,580 @@ const api = {
 window.Deck = api;
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : queueMicrotask(init);
 })();
+</script>
+<script type="application/json" id="deck-kit-code-cache">{"ts\nconst TTL = 60_000;\nconst cache = new Map\u003cstring, Entry>();\n\nexport async function getPrice(sku: string): Promise\u003cnumber> {\n  const hit = cache.get(sku);\n  if (hit && hit.expires > Date.now()) return hit.value;\n\n  const value = await db.price(sku);\n  cache.set(sku, { value, expires: Date.now() + TTL });\n  return value;\n}":["cccccaaaaajaeeeeeej","cccccaaaaaaajacccagggjhhhhhhjahhhhhjjjj","","ccccccacccccaccccccccaggggggggjkkkjahhhhhhjjahhhhhhhjhhhhhhjaj","aacccccaaaaajaaaaaajgggjaaajj","aaccajaaaajjaaaajiiiiiiiajaaaaajgggjjjaccccccaaaajiiiiij","","aacccccaaaaaaajacccccaaajgggggjaaajj","aaaaaaajgggjaaajajaaaaaajaiiiiiiijaaaaajgggjjajaaaaajjj","aaccccccaaaaaaj","j"],"ts\nexport async function importPrices(rows: Row[]) {\n  for (const row of rows) {\n    await db.upsertPrice(row.sku, row.value);\n  }\n}":["ccccccacccccaccccccccaggggggggggggjkkkkjahhhjjjaj","aacccajcccccaaaaaccaaaaajaj","aaaacccccaaajgggggggggggjaaajiiijaaaajiiiiijj","aaj","j"],"ts\nexport async function importPrices(rows: Row[]) {\n  for (const row of rows) {\n    await db.upsertPrice(row.sku, row.value);\n    cache.delete(row.sku);\n  }\n}":["ccccccacccccaccccccccaggggggggggggjkkkkjahhhjjjaj","aacccajcccccaaaaaccaaaaajaj","aaaacccccaaajgggggggggggjaaajiiijaaaajiiiiijj","aaaaaaaaajggggggjaaajiiijj","aaj","j"],"ts\nexport async function importPrices(rows: Row[]) {\n  await db.upsertPrices(rows);\n  await bus.publish('price.changed', rows.map((r) => r.sku));\n}\n\nbus.subscribe('price.changed', (skus) => skus.forEach((s) => cache.delete(s)));":["ccccccacccccaccccccccaggggggggggggjkkkkjahhhjjjaj","aacccccaaajggggggggggggjaaaajj","aacccccaaaajgggggggjdddddddddddddddjaaaaajgggjjkjaccaajiiijjj","j","","aaajgggggggggjdddddddddddddddjajkkkkjaccaaaaajgggggggjjkjaccaaaaaajggggggjajjjj"],"ts\nexport async function importPrices(rows: Row[]) {\n  for (const row of rows) {\n    await db.upsertPrice(row.sku, row.value);\n  }\n  await db.upsertPrices(rows);\n  await bus.publish('price.changed', rows.map((r) => r.sku));\n}\n\nbus.subscribe('price.changed', (skus) => skus.forEach((s) => cache.delete(s)));":["ccccccacccccaccccccccaggggggggggggjkkkkjahhhjjjaj","aacccajcccccaaaaaccaaaaajaj","aaaacccccaaajgggggggggggjaaajiiijaaaajiiiiijj","aaj","aacccccaaajggggggggggggjaaaajj","aacccccaaaajgggggggjdddddddddddddddjaaaaajgggjjkjaccaajiiijjj","j","","aaajgggggggggjdddddddddddddddjajkkkkjaccaaaaajgggggggjjkjaccaaaaaajggggggjajjjj"],"ts\ntest('bulk import invalidates cached prices', async () => {\n  await getPrice('sku-1');                        // warm the cache\n  await importPrices([{ sku: 'sku-1', value: 9 }]);":["ggggjdddddddddddddddddddddddddddddddddddddddjacccccajjaccaj","aacccccaggggggggjdddddddjjaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbb","aacccccaggggggggggggjjjaiiijadddddddjaiiiiijaeajjjj"],"ts\ntest('bulk import invalidates cached prices', async () => {\n  await getPrice('sku-1');                        // warm the cache\n  await importPrices([{ sku: 'sku-1', value: 9 }]);\n  expect(await getPrice('sku-1')).toBe(9);        // failed for eleven minutes\n});":["ggggjdddddddddddddddddddddddddddddddddddddddjacccccajjaccaj","aacccccaggggggggjdddddddjjaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbb","aacccccaggggggggggggjjjaiiijadddddddjaiiiiijaeajjjj","aaggggggjcccccaggggggggjdddddddjjjggggjejjaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbb","jjj"]}</script>
+<script id="deck-kit-code-js">
+/*! deck-kit code plugin · optional · MIT · reference: 14-code-slides.md
+ * Code blocks for technical talks: Shiki highlighting, magic-move between code states,
+ * line focus, diffs, deterministic typing. Everything is a pure function of the build
+ * progress the runtime hands over, so rest frames, jumps, PDF and video stay exact.
+ * Load after runtime/deck.js and before the deck's own Deck.slide() calls. */
+(function () {
+'use strict';
+const D = window.Deck;
+if (!D) { console.error('deck-kit code plugin: runtime/deck.js must load first'); return; }
+const { ease, clamp, lerp, seg } = D;
+const CFG = { shiki: '3.13.0', hosts: ['jsdelivr', 'esm'], timeout: 10000, dim: .38, dur: .9, minSize: 24 };
+const $$ = (r, s) => [...r.querySelectorAll(s)];
+const num = (v, d) => (v == null || v === '' || !isFinite(+v) ? d : +v);
+
+/* ───────────────────────── ready gate ─────────────────────────
+ * The exporter waits for window.__ready; the runtime sets it to true after fonts and images.
+ * The plugin adds its own condition (highlighting settled) without touching the runtime. */
+let codeReady = false, coreReady;
+Object.defineProperty(window, '__ready', { configurable: true, get: () => coreReady === true && codeReady, set: v => { coreReady = v; } });
+
+/* ───────────────────────── theme for Shiki ─────────────────────────
+ * Colours are CSS variables (--dk-code-*, defined in code.css from the deck's own variables),
+ * so the highlighted code always matches the deck and can change with the theme without re-highlighting. */
+const V = r => `var(--dk-code-${r})`;
+const rule = (role, ...scope) => ({ scope, settings: { foreground: V(role) } });
+const THEME = { name: 'deck', type: 'dark', colors: { 'editor.foreground': V('fg'), 'editor.background': V('bg') }, tokenColors: [
+  rule('fg', 'variable', 'meta.embedded', 'source'),
+  rule('comment', 'comment', 'punctuation.definition.comment'),
+  rule('string', 'string', 'punctuation.definition.string', 'markup.inline.raw'),
+  rule('number', 'constant.numeric'),
+  rule('const', 'constant', 'variable.language', 'support.constant', 'constant.language'),
+  rule('keyword', 'keyword', 'storage', 'keyword.control', 'keyword.operator.new', 'keyword.operator.expression', 'keyword.operator.delete',
+    'keyword.operator.logical.python', 'keyword.operator.word', 'keyword.other'),
+  rule('punct', 'punctuation', 'meta.brace', 'keyword.operator', 'meta.delimiter', 'keyword.operator.type.annotation'),
+  rule('prop', 'variable.other.property', 'variable.other.object.property', 'variable.other.constant.property', 'meta.object-literal.key',
+    'support.type.property-name', 'entity.name.tag.yaml', 'meta.property-name'),
+  rule('function', 'entity.name.function', 'support.function', 'variable.function', 'meta.function-call entity.name.function'),
+  rule('type', 'entity.name.type', 'entity.name.class', 'support.type', 'support.class', 'entity.other.inherited-class', 'storage.type.primitive'),
+  rule('param', 'variable.parameter'),
+  rule('tag', 'entity.name.tag', 'support.class.component'),
+  rule('attr', 'entity.other.attribute-name'),
+  rule('ins', 'markup.inserted'), rule('del', 'markup.deleted'),
+] };
+const ALIAS = { ts: 'typescript', js: 'javascript', py: 'python', rs: 'rust', sh: 'shellscript', bash: 'shellscript', shell: 'shellscript', zsh: 'shellscript',
+  yml: 'yaml', golang: 'go', 'c++': 'cpp', 'c#': 'csharp', cs: 'csharp', rb: 'ruby', kt: 'kotlin', md: 'markdown', dockerfile: 'docker', text: '', txt: '', plain: '' };
+
+/* ───────────────────────── fallback highlighter ─────────────────────────
+ * Used when Shiki cannot load (offline, blocked CDN, unknown language). Coarse but coloured. */
+const KW = new Set(('abstract as assert async await break case catch class const continue debugger def default defer del delete do elif else enum except export extends '
+  + 'finally fn for from func function global go if implements import in instanceof interface is lambda let loop match mod module mut namespace new nonlocal of package '
+  + 'pass pub raise return select self static struct super switch throw trait try type typeof use var void while with yield public private protected readonly '
+  + 'and or not impl where then begin end').split(' '));
+const SQL = new Set('select from where group by order having limit offset join left right inner outer on as and or not in is null insert into values update set delete create table index drop alter add primary key foreign references union all distinct case when then else end between like exists count sum avg min max'.split(' '));
+const CONST = new Set('true false null undefined None True False nil NaN Infinity this self'.split(' '));
+function mini(text, lang) {
+  const hash = /^(py|python|sh|bash|shell|shellscript|zsh|yaml|yml|toml|ruby|rb|docker|dockerfile)$/.test(lang), dash = /^(sql|lua)$/.test(lang);
+  const sql = lang === 'sql', kv = /^(json|yaml|yml|toml)$/.test(lang), n = text.length, role = new Array(n).fill('fg');
+  const set = (a, b, r) => { for (let k = a; k < b; k++) if (text[k] !== '\n') role[k] = r; };
+  for (let i = 0; i < n;) {
+    const c = text[i], rest = text.slice(i, i + 3);
+    if ((!hash && !dash && rest.startsWith('//')) || (hash && c === '#') || (dash && rest.startsWith('--'))) {
+      let j = text.indexOf('\n', i); if (j < 0) j = n; set(i, j, 'comment'); i = j; continue;
+    }
+    if (!hash && !dash && rest.startsWith('/*')) { let j = text.indexOf('*/', i + 2); j = j < 0 ? n : j + 2; set(i, j, 'comment'); i = j; continue; }
+    if (c === '"' || c === "'" || c === '`') {
+      const q = (lang === 'py' || lang === 'python') && rest === c + c + c ? c + c + c : c;
+      let j = i + q.length;
+      while (j < n && !text.startsWith(q, j) && (q.length === 3 || q === '`' || text[j] !== '\n')) j += text[j] === '\\' ? 2 : 1;
+      j = Math.min(n, j + q.length);
+      let k = j; while (text[k] === ' ') k++;
+      set(i, j, kv && text[k] === ':' ? 'prop' : 'string'); i = j; continue;
+    }
+    if (/\d/.test(c) && !/[\w$]/.test(text[i - 1] || '')) {
+      const m = /^(0x[\da-f]+|\d[\d_]*(\.\d+)?(e[+-]?\d+)?)/i.exec(text.slice(i, i + 40)); set(i, i + m[0].length, 'number'); i += m[0].length; continue;
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      const m = /^[A-Za-z_$][\w$]*/.exec(text.slice(i, i + 80)), w = m[0], j = i + w.length;
+      let k = j; while (text[k] === ' ') k++;
+      let p = i - 1; while (text[p] === ' ') p--;
+      const r = (sql ? SQL.has(w.toLowerCase()) : KW.has(w)) ? 'keyword' : CONST.has(w) ? 'const' : text[k] === '(' ? 'function'
+        : /[A-Z]/.test(w[0]) ? 'type' : text[p] === '.' ? 'prop' : 'fg';
+      set(i, j, r); i = j; continue;
+    }
+    if (/[{}()[\];,.:<>=+\-*/%!&|^~?@]/.test(c)) role[i] = 'punct';
+    i++;
+  }
+  const out = []; let line = [];
+  for (let i = 0; i < n; i++) { if (text[i] === '\n') { out.push(line); line = []; } else line.push(role[i]); }
+  out.push(line);
+  return out;
+}
+
+/* ───────────────────────── Shiki from a CDN ───────────────────────── */
+let shikiP = null, hl = null, engine = '';
+const langP = {}, langM = {};
+// every module is requested from all configured hosts at once; the first to answer wins (a CDN that is slow or blocked costs nothing)
+const URLS = {
+  jsdelivr: { pkg: (m, v) => `https://cdn.jsdelivr.net/npm/${m}@${v}/+esm`, lang: (id, v) => `https://cdn.jsdelivr.net/npm/@shikijs/langs@${v}/dist/${id}.mjs` },
+  esm: { pkg: (m, v) => `https://esm.sh/${m}@${v}`, lang: (id, v) => `https://esm.sh/@shikijs/langs@${v}/${id}` },
+};
+const any = (kind, name) => Promise.any(CFG.hosts.filter(h => URLS[h]).map(h => import(URLS[h][kind](name, CFG.shiki))));
+function loadShiki() {
+  return shikiP || (shikiP = (async () => {
+    const [core, eng] = await Promise.all([any('pkg', '@shikijs/core'), any('pkg', '@shikijs/engine-javascript')]);
+    hl = await core.createHighlighterCore({ themes: [THEME], langs: [], engine: eng.createJavaScriptRegexEngine({ forgiving: true }) });
+    return hl;
+  })());
+}
+// the grammar module downloads in parallel with the core; it is registered once both are there
+function loadLang(id) {
+  const mod = langM[id] || (langM[id] = any('lang', id));
+  return langP[id] || (langP[id] = Promise.all([mod, loadShiki()]).then(([m]) => hl.loadLanguage(m.default)));
+}
+const settle = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms} ms`)), ms))]);
+let warned = false;
+const warn = msg => { if (!warned) { warned = true; console.warn(`deck-kit code: ${msg}; using the built-in highlighter (coloured, less precise)`); } };
+
+/* Pre-highlighted cache: a JSON script with id deck-kit-code-cache maps "lang\ntext" to one string per line,
+ * one letter per character (a = ROLES[0] ...). Written by `sync-runtime.mjs --code-cache deck.html` after a run with Shiki.
+ * A deck whose every block hits the cache never touches the network, so `bundle` gives an offline file with Shiki colours. */
+const ROLES = ['fg', 'comment', 'keyword', 'string', 'number', 'const', 'function', 'type', 'prop', 'punct', 'param', 'tag', 'attr', 'ins', 'del'];
+const enc = roles => roles.map(row => row.map(r => String.fromCharCode(97 + Math.max(0, ROLES.indexOf(r)))).join(''));
+const dec = lines => lines.map(s => [...s].map(c => ROLES[c.charCodeAt(0) - 97] || 'fg'));
+let cache = {};
+try { cache = JSON.parse(document.getElementById('deck-kit-code-cache')?.textContent || '{}'); } catch (e) { console.warn('deck-kit code: unreadable highlight cache'); }
+const used = {};   // entries produced by Shiki or the cache in this run: what dump() writes back
+
+// roles[line][col] for one state's text
+// late: a second try after the timeout (live mode only), without a deadline; null when it fails again
+async function highlight(text, lang, late) {
+  const id = ALIAS[lang] ?? lang, key = `${lang}\n${text}`;
+  if (!id) return text.split('\n').map(l => new Array(l.length).fill('fg'));
+  if (cache[key]) { used[key] = cache[key]; engine = engine === 'fallback' ? engine : 'cache'; return dec(cache[key]); }
+  if (CFG.shiki) {
+    try {
+      const ready = loadLang(id);
+      await (late ? ready : settle(ready, CFG.timeout));
+      const lines = hl.codeToTokensBase(text, { lang: id, theme: 'deck' }), out = []; let off = 0;
+      const src = text.split('\n');
+      lines.forEach((toks, li) => {
+        const row = new Array((src[li] || '').length).fill('fg');
+        for (const t of toks) {
+          const m = /--dk-code-([a-z]+)\)/.exec(t.color || ''), r = m ? m[1] : 'fg';
+          for (let k = 0; k < t.content.length; k++) row[t.offset - off + k] = r;
+        }
+        out.push(row); off += (src[li] || '').length + 1;
+      });
+      engine = engine === 'fallback' ? engine : engine === 'cache' ? 'cache+shiki' : 'shiki';
+      used[key] = enc(out);
+      return out;
+    } catch (e) { if (late) return null; warn(`Shiki unavailable for "${lang}" (${e.message || e})`); }
+  }
+  if (late) return null;
+  engine = 'fallback';
+  const out = mini(text, lang); out.fb = true;
+  return out;
+}
+
+/* ───────────────────────── parsing ───────────────────────── */
+const dedent = lines => {
+  const ind = Math.min(...lines.filter(l => l.trim()).map(l => l.match(/^ */)[0].length), 1e9);
+  return lines.map(l => l.slice(Math.min(ind, l.match(/^ */)[0].length)));
+};
+const cleanLines = text => {
+  let lines = text.replace(/\t/g, '  ').replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/, ''));
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return dedent(lines);
+};
+// "1-3|5|7-" → one Set of 1-based line numbers per step (null = every line)
+function parseFocus(spec, n) {
+  spec = (spec || '').trim();
+  if (!spec || spec === '*' || spec === 'all') return null;
+  const s = new Set();
+  for (const part of spec.split(',')) {
+    const m = /^\s*(\d+)(?:\s*-\s*(\d*))?\s*$/.exec(part); if (!m) continue;
+    const a = +m[1], b = m[2] === undefined ? a : m[2] === '' ? n : +m[2];
+    for (let k = a; k <= b; k++) s.add(k);
+  }
+  return s;
+}
+
+function parseBlock(el, id) {
+  const diff = el.hasAttribute('data-diff');
+  const kids = $$(el, ':scope > [data-code-step]'), raw = [];
+  if (kids.length) for (const k of kids) raw.push({ text: k.textContent, spec: k.dataset.lines ?? null, file: k.dataset.file });
+  else {
+    let cur = { lines: [], spec: null };
+    const list = [cur];
+    for (const l of el.textContent.replace(/\r/g, '').split('\n')) {
+      const m = el.dataset.codeSep === 'off' ? null : /^\s*---+\s*(.*)$/.exec(l);
+      if (m) { cur = { lines: [], spec: m[1] || null }; list.push(cur); } else cur.lines.push(l);
+    }
+    for (const s of list) raw.push({ text: s.lines.join('\n'), spec: s.spec });
+  }
+  const states = raw.filter(r => r.text.trim()).map(r => {
+    let lines = cleanLines(r.text).map(text => ({ text, kind: 'ctx' }));
+    if (diff) lines = lines.map(l => {
+      const m = /^([+-]) ?(.*)$/.exec(l.text);
+      if (m) return { text: m[2], kind: m[1] === '+' ? 'ins' : 'del' };
+      return { text: l.text.replace(/^ {1,2}/, ''), kind: 'ctx' };
+    });
+    return { lines, spec: r.spec, file: r.file, text: lines.map(l => l.text).join('\n') };
+  });
+  if (!states.length) return null;
+  // frames: one per (state, focus); the rest frame of every step shows exactly one of them
+  const frames = [];
+  for (const [si, s] of states.entries()) {
+    const parts = s.spec != null ? s.spec.split('|') : [null];
+    for (const p of parts) frames.push({ s: si, spec: p });
+  }
+  const bl = el.dataset.lines;
+  if (bl != null) {
+    const parts = bl.split('|');
+    if (states.length === 1 && frames.length === 1) { frames.length = 0; parts.forEach(p => frames.push({ s: 0, spec: p })); }
+    else if (parts.length === frames.length) frames.forEach((f, k) => { f.spec = parts[k]; });
+    else console.warn(`deck-kit code (${id}): data-lines has ${parts.length} parts for ${frames.length} steps; extra steps show every line`);
+  }
+  for (const f of frames) f.focus = parseFocus(f.spec, states[f.s].lines.length);
+  const lang = (el.dataset.code || 'text').toLowerCase();
+  return { el, id, lang, states, frames, diff,
+    file: el.dataset.file || '', numbers: el.hasAttribute('data-numbers'), start: num(el.dataset.numbers, 1) || 1,
+    cursor: el.hasAttribute('data-code-cursor'), dur: CFG.dur, dim: CFG.dim,
+    from: num(el.dataset.codeFrom, num(el.dataset.step, 0)), roles: null, ready: null, laid: false };
+}
+
+/* ───────────────────────── matching two states (magic move) ─────────────────────────
+ * Atoms are the unit that glides: a word, a number or one punctuation mark. Lines are matched first
+ * (LCS on trimmed text), then atoms inside the changed hunks between matched lines. Deterministic. */
+function lcs(a, b) {
+  const n = a.length, m = b.length, t = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) t[i][j] = a[i] === b[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1]);
+  const out = [];
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (a[i] === b[j]) { out.push([i, j]); i++; j++; } else if (t[i + 1][j] >= t[i][j + 1]) i++; else j++;
+  }
+  return out;
+}
+const ATOM = /[\p{L}\p{N}_$]+|\S/gu;
+function atomize(state) {
+  state.atoms = []; state.span = [];
+  state.lines.forEach((l, li) => {
+    const a0 = state.atoms.length;
+    for (const m of l.text.matchAll(ATOM)) state.atoms.push({ t: m[0], line: li, col: m.index });
+    state.span.push([a0, state.atoms.length]);
+  });
+}
+const isPunct = a => a.t.length === 1 && !/[\p{L}\p{N}_$]/u.test(a.t);
+function matchStates(A, B) {
+  const map = new Map();
+  const ka = A.lines.map(l => l.text.trim()), kb = B.lines.map(l => l.text.trim());
+  const ia = ka.map((k, i) => (k ? i : -1)).filter(i => i >= 0), ib = kb.map((k, i) => (k ? i : -1)).filter(i => i >= 0);
+  const anchors = lcs(ia.map(i => ka[i]), ib.map(i => kb[i])).map(([x, y]) => [ia[x], ib[y]]);
+  anchors.push([A.lines.length, B.lines.length]);
+  let pa = 0, pb = 0;
+  for (const [la, lb] of anchors) {
+    const ra = [A.span[pa]?.[0] ?? A.atoms.length, la < A.lines.length ? A.span[la][0] : A.atoms.length];
+    const rb = [B.span[pb]?.[0] ?? B.atoms.length, lb < B.lines.length ? B.span[lb][0] : B.atoms.length];
+    const sa = A.atoms.slice(ra[0], ra[1]), sb = B.atoms.slice(rb[0], rb[1]), got = new Map();
+    for (const [x, y] of lcs(sa.map(a => a.t), sb.map(a => a.t))) got.set(x, y);
+    // a lone punctuation mark that matched far from any matched neighbour would fly across the block: drop it
+    for (const [x, y] of [...got]) if (isPunct(sa[x]) && got.get(x - 1) !== y - 1 && got.get(x + 1) !== y + 1) got.delete(x);
+    for (const [x, y] of got) map.set(ra[0] + x, rb[0] + y);
+    if (la < A.lines.length) {
+      const [a0, a1] = A.span[la], [b0] = B.span[lb];
+      for (let k = 0; k < a1 - a0; k++) map.set(a0 + k, b0 + k);
+    }
+    pa = la + 1; pb = lb + 1;
+  }
+  return map;
+}
+
+/* ───────────────────────── layout: measure once, build the nodes ───────────────────────── */
+const cssNum = (cs, name, d) => { const v = parseFloat(cs.getPropertyValue(name)); return isFinite(v) ? v : d; };
+function probe(body) {
+  const p = document.createElement('span');
+  p.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;white-space:pre';
+  p.textContent = 'M'.repeat(400); body.append(p);
+  const w = p.offsetWidth / 400; p.remove();
+  return w;
+}
+
+function layout(b) {
+  const el = b.el;
+  b.dur = num(el.dataset.codeDur, CFG.dur); b.dim = num(el.dataset.codeDim, CFG.dim);
+  b.states.forEach(atomize);
+  el.classList.add('dk-code');
+  el.textContent = '';
+  if (b.file) { const bar = D.el('div', { class: 'dk-code-bar' }, el); D.el('span', { class: 'dk-code-file', text: b.file }, bar); }
+  const body = D.el('div', { class: 'dk-code-body' }, el);
+  const cs = getComputedStyle(el);
+  const padX = cssNum(cs, '--dk-code-pad-x', 40), padY = cssNum(cs, '--dk-code-pad-y', 30), lhk = cssNum(cs, '--dk-code-lh', 1.5);
+  let size = num(el.dataset.codeSize, parseFloat(cs.fontSize));
+  if (el.dataset.codeSize) el.style.fontSize = size + 'px';
+  const minSize = Math.min(size, num(el.dataset.codeMin, CFG.minSize));
+  const width = el.clientWidth;
+  let cw = probe(body);
+  const maxLen = Math.max(...b.states.flatMap(s => s.lines.map(l => l.text.length)), 1);
+  const nLines = Math.max(...b.states.map(s => s.lines.length));
+  const digits = String(b.start + nLines - 1).length;
+  const gutterCols = (b.numbers ? digits + 2 : 0) + (b.diff ? 2 : 0);
+  // rule: shrink to fit the longest line, never below the floor (24 px); below the floor, wrap
+  const fitSize = (width - 2 * padX) / ((maxLen + gutterCols) * (cw / size));
+  if (fitSize < size) { size = Math.max(minSize, Math.floor(fitSize * 4) / 4); el.style.fontSize = size + 'px'; cw = probe(body); }
+  const lineH = Math.round(size * lhk), avail = Math.max(8, Math.floor((width - 2 * padX) / cw) - gutterCols);
+  const numW = b.numbers ? (digits + 2) * cw : 0, signW = b.diff ? 2 * cw : 0, x0 = padX + signW + numW, wrapped = maxLen > avail;
+  if (wrapped) console.warn(`deck-kit code (${b.id}): a line is ${maxLen} columns, the block fits ${avail}; long lines wrap. Shorten them or widen the block`);
+
+  // rows of every state (long lines wrap with a hanging indent)
+  const items = [], byKey = new Map();
+  const decor = (key, make) => { let it = byKey.get(key); if (!it) { it = make(); it.kind = it.kind || 'decor'; items.push(it); byKey.set(key, it); } return it; };
+  let maxRows = 1;
+  b.states.forEach((S, si) => {
+    let row = 0; S.rows = []; S.recs = [];
+    S.lines.forEach((l, li) => {
+      const ind = l.text.match(/^ */)[0].length, cont = Math.min(ind + 2, Math.floor(avail / 2)), [a0, a1] = S.span[li];
+      let cur = 0, shift = 0;
+      for (let k = a0; k < a1; k++) {
+        const a = S.atoms[k];
+        let vc = a.col - shift;
+        if (vc + a.t.length > avail && vc > (cur ? cont : 0)) { cur++; shift = a.col - cont; vc = cont; }
+        S.recs[k] = { x: x0 + vc * cw, y: padY + (row + cur) * lineH, line: li, col: a.col, role: 'fg' };
+      }
+      S.rows[li] = row;
+      const y = r => padY + r * lineH;
+      if (b.numbers) decor(`n${row}|${b.start + li}`, () => ({ text: String(b.start + li), cls: 'dk-code-num', style: { width: digits * cw + 'px' }, recs: [], nx: padX + signW })).recs[si] = { x: padX + signW, y: y(row), line: li };
+      if (l.kind !== 'ctx') {
+        decor(`s${row}|${l.kind}`, () => ({ text: l.kind === 'ins' ? '+' : '-', cls: 'dk-code-sign', kind: 'decor', recs: [], data: l.kind })).recs[si] = { x: padX, y: y(row), line: li };
+      }
+      for (let r = 0; r <= cur; r++) if (l.kind !== 'ctx')
+        decor(`b${row + r}|${l.kind}`, () => ({ text: '', cls: 'dk-code-band', recs: [], data: l.kind, style: { height: lineH + 'px' } })).recs[si] = { x: 0, y: y(row + r), line: li };
+      row += cur + 1;
+    });
+    S.nrows = row; maxRows = Math.max(maxRows, row);
+  });
+  body.style.height = maxRows * lineH + 2 * padY + 'px';
+
+  // match consecutive states: matched atoms share one node
+  b.states.forEach((S, si) => {
+    const prev = si ? b.states[si - 1] : null, m = prev ? matchStates(prev, S) : new Map(), back = new Map([...m].map(([x, y]) => [y, x]));
+    S.node = [];
+    S.atoms.forEach((a, k) => {
+      const rec = S.recs[k];
+      let it = null;
+      if (back.has(k)) it = prev.node[back.get(k)];
+      if (!it) { it = { kind: 'atom', text: a.t, cls: 'dk-code-tok', recs: [] }; items.push(it); }
+      it.recs[si] = rec; S.node[k] = it; a._rec = rec;
+    });
+  });
+  // order: bands under numbers under text
+  const rank = { band: 0, num: 1, sign: 1, tok: 2 };
+  items.sort((p, q) => rank[p.cls.replace('dk-code-', '')] - rank[q.cls.replace('dk-code-', '')]);
+  for (const it of items) {
+    it.el = D.el('span', { class: it.cls, text: it.text }, body);
+    if (it.style) Object.assign(it.el.style, it.style);
+    if (it.data) it.el.dataset.k = it.data;
+    it.c = {};
+  }
+  b.caret = D.el('span', { class: 'dk-code-caret' }, body);
+  b.caret.style.height = lineH * .78 + 'px';
+  Object.assign(b, { items, body, cw, lineH, size, padY, x0, laid: true, cur: null, c: {} });
+  applyRoles(b);
+
+  // one marker per step that changes something: the runtime drives it, its progress is the block's state
+  const F = b.frames.length, first = b.cursor ? 0 : 1;
+  b.raw = new Array(F).fill(0); if (!b.cursor) b.raw[0] = 1;
+  b.markers = [];
+  for (let k = first; k < F; k++) {
+    const mk = D.el('i', { class: 'dk-code-mark', hidden: '', 'data-step': b.from + k, 'data-anim': 'code-step', 'data-dur': frameDur(b, k).toFixed(3) }, el);
+    mk._blk = b; mk._k = k; b.markers.push(mk);
+  }
+  b.el._blk = b;
+  paint(b);
+}
+
+const newChars = (b, k) => {
+  const f = b.frames[k], S = b.states[f.s], P = k ? b.states[b.frames[k - 1].s] : null;
+  if (P === S) return 0;
+  return S.node.reduce((n, it, i) => n + (it.recs.length && (!P || !it.recs[b.frames[k - 1].s]) ? S.atoms[i].t.length : 0), 0);
+};
+const frameDur = (b, k) => (b.cursor ? clamp(newChars(b, k) * .03 + .3, .7, 2) : b.dur);
+
+function applyRoles(b) {
+  if (!b.laid || !b.roles) return;
+  b.states.forEach((S, si) => S.atoms.forEach(a => { a._rec.role = b.roles[si]?.[a.line]?.[a.col] || 'fg'; }));
+  if (b.cur) paint(b, true);
+}
+
+/* ───────────────────────── painting: a pure function of (frame a, frame b, progress) ───────────────────────── */
+D.anim('code-step', { dur: .9, curve: ease.linear, f(el, e, info) {
+  const b = el._blk; b.raw[el._k] = info.raw;
+  if (el._k === b.frames.length - 1) { b.dirtyArgs = null; paint(b); }
+  return {};
+} });
+
+const wr = (it, k, v, apply) => { if (it.c[k] !== v) { it.c[k] = v; apply(v); } };
+function paint(b, again) {
+  if (!again) {
+    let cur = 0;
+    for (let k = b.frames.length - 1; k >= 1; k--) if (b.raw[k] > 0) { cur = k; break; }
+    b.cur = { k: cur, p: cur || b.cursor ? b.raw[cur] : 1 };
+  }
+  const { k, p } = b.cur, fb = b.frames[k], fa = k ? b.frames[k - 1] : b.cursor ? null : fb;
+  const sa = fa ? fa.s : -1, sb = fb.s, sameState = sa === sb;
+  // segments of the step's progress
+  const T = b.cursor ? { out: [0, .28], mv: [0, .28], in: [.28, .5], dim: [0, .28] } : { out: [0, .35], mv: [.1, .8], in: [.45, 1], dim: [.1, .7] };
+  const qOut = 1 - ease.outCubic(seg(p, ...T.out)), qMv = ease.inOutCubic(seg(p, ...T.mv)), qIn = ease.outCubic(seg(p, ...T.in)), qDim = ease.inOutSine(seg(p, ...T.dim));
+  const dimOf = (f, line) => (!f || !f.focus || f.focus.has(line + 1) ? 1 : b.dim);
+  // typing: new atoms appear character by character in reading order
+  let typed = null, total = 0;
+  if (b.cursor && !sameState) {
+    typed = new Map(); const S = b.states[sb];
+    S.atoms.forEach((a, i) => { const it = S.node[i]; if (!(sa >= 0 && it.recs[sa])) { typed.set(it, { start: total, len: a.t.length }); total += a.t.length; } });
+  }
+  const tt = typed ? seg(p, .28, 1) * total : 0;
+  let caret = null;
+  for (const it of b.items) {
+    const ra = sa >= 0 ? it.recs[sa] : null, rb = it.recs[sb];
+    let x, y, o, role, text = it.text;
+    if (ra && rb) {
+      x = lerp(ra.x, rb.x, qMv); y = lerp(ra.y, rb.y, qMv);
+      o = lerp(dimOf(fa, ra.line), dimOf(fb, rb.line), sameState ? ease.inOutSine(seg(p, 0, .6)) : qDim);
+      role = (p >= .5 ? rb : ra).role;
+    } else if (ra) { x = ra.x; y = ra.y; o = dimOf(fa, ra.line) * qOut; role = ra.role; }
+    else if (rb) {
+      x = rb.x; y = rb.y; role = rb.role;
+      const ty = typed && typed.get(it);
+      if (ty) {
+        const shown = clamp(Math.round(tt - ty.start), 0, ty.len);
+        o = shown > 0 ? dimOf(fb, rb.line) : 0; text = it.text.slice(0, shown);
+        if (shown > 0 && shown <= ty.len && p < 1 && (!caret || ty.start >= caret.start)) caret = { start: ty.start, x: x + shown * b.cw, y };
+      } else o = dimOf(fb, rb.line) * qIn;
+    } else { o = 0; x = y = 0; }
+    wr(it, 'v', o <= .004 ? 'hidden' : '', v => { it.el.style.visibility = v; });
+    if (o <= .004) { wr(it, 'o', '', v => { it.el.style.opacity = v; }); if (it.kind === 'atom') wr(it, 'x', it.text, v => { it.el.textContent = v; }); continue; }
+    wr(it, 'o', o >= .999 ? '' : o.toFixed(3), v => { it.el.style.opacity = v; });
+    wr(it, 't', `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)`, v => { it.el.style.transform = v; });
+    if (it.kind === 'atom') {
+      wr(it, 'r', role, v => { it.el.dataset.r = v; });
+      wr(it, 'x', text, v => { it.el.textContent = v; });
+    }
+  }
+  const showCaret = !!caret && p > 0 && p < 1;
+  wr(b, 'cv', showCaret ? 'visible' : 'hidden', v => { b.caret.style.visibility = v; });
+  if (showCaret) b.caret.style.transform = `translate(${caret.x.toFixed(2)}px,${(caret.y + b.lineH * .11).toFixed(2)}px)`;
+}
+
+/* ───────────────────────── wiring ───────────────────────── */
+const blocks = [], bySlide = new Map();
+function slideSetup(sec) {
+  for (const b of bySlide.get(sec.id) || []) layout(b);
+}
+const origSlide = D.slide;
+D.slide = function (id, spec) {
+  if (bySlide.has(id)) {
+    const user = spec || {};
+    spec = { ...user, setup(el, api) { slideSetup(el); user.setup?.(el, api); } };
+  }
+  return origSlide.call(D, id, spec);
+};
+
+function scan() {
+  const deck = document.querySelector('.deck');
+  if (!deck) { console.error('deck-kit code: no .deck element yet; load the plugin after the deck markup'); return; }
+  if (!document.getElementById('deck-kit-code-css') && !document.querySelector('style[data-dk-code]'))
+    console.error('deck-kit code: runtime/code.css is missing (add <style id="deck-kit-code-css"></style> and run scripts/sync-runtime.mjs)');
+  for (const me of document.scripts) {
+    if (me.id === 'deck-kit-code-js') break;
+    if (!me.src && !/^deck-kit/.test(me.id) && /Deck\.slide\(/.test(me.text)) { console.error('deck-kit code: load the plugin before the deck script that calls Deck.slide(); its hooks would be replaced'); break; }
+  }
+  $$(deck, ':scope > section.slide').forEach((sec, i) => {
+    const els = $$(sec, '[data-code]').filter(e => !e.parentElement.closest('[data-code]'));
+    if (!els.length) return;
+    if (!sec.id) sec.id = `code-slide-${i + 1}`;
+    const list = els.map((e, j) => parseBlock(e, `${sec.id}#${j + 1}`)).filter(Boolean);
+    if (!list.length) return;
+    bySlide.set(sec.id, list); blocks.push(...list);
+    origSlide.call(D, sec.id, { setup: slideSetup });
+    for (const b of list) {
+      // styled from the start, so the warm-up layout requests the code font and fonts.ready waits for it
+      b.el.classList.add('dk-code');
+      if (b.states.some(s => s.lines.length > 18)) console.warn(`deck-kit code (${b.id}): a code state has over 18 lines; show 8-15`);
+    }
+  });
+}
+scan();
+
+function start() {
+  if (!blocks.length) { codeReady = true; return; }
+  const jobs = blocks.map(b => Promise.all(b.states.map(s => highlight(s.text, b.lang))).then(r => { b.roles = r; applyRoles(b); }));
+  Promise.allSettled(jobs).then(() => {
+    codeReady = true;
+    // live only: a slow CDN may still deliver, and the block then upgrades in place (exports never do: they must be repeatable)
+    if (D.MODE === 'live') for (const b of blocks) if (b.roles && b.roles.some(r => r.fb))
+      Promise.all(b.states.map(s => highlight(s.text, b.lang, true))).then(r => { if (r.every(Boolean)) { b.roles = r; applyRoles(b); } });
+  });
+}
+document.readyState === 'loading' ? document.addEventListener('readystatechange', function h() {
+  if (document.readyState === 'loading') return;
+  document.removeEventListener('readystatechange', h); start();
+}) : start();
+
+D.code = { config(o) { Object.assign(CFG, o); return D.code; }, blocks, get ready() { return codeReady; }, get engine() { return engine; },
+  // JSON for the offline cache slot (only what Shiki or the cache produced in this run)
+  dump() { return JSON.stringify(used).replace(/</g, '\\u003c'); } };
+})();
+</script>
+<script>
+const { svg, scaleLinear, scaleBand, ease, lerp } = Deck;
+
+// Deck.code is optional; without the plugin slots the code slides simply show their raw text.
+Deck.slide('writers', {
+  steps: 1,
+  setup(el) {
+    const g = el.querySelector('svg');
+    const defs = svg('defs', {}, g);
+    const arrow = (id, color) => {
+      const m = svg('marker', { id, viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+      svg('path', { d: 'M0,0 L10,5 L0,10 z', fill: color }, m);
+    };
+    arrow('wr-a', 'var(--ink)'); arrow('wr-b', 'var(--accent-2)');
+    const node = (x, y, t, i) => {
+      const n = svg('g', { class: 'node', 'data-anim': 'pop', 'data-delay': i * .12 }, g);
+      svg('rect', { x, y, width: 340, height: 110, rx: 14 }, n);
+      svg('text', { x: x + 170, y: y + 55, text: t }, n);
+    };
+    node(0, 20, 'bulk import', 0); node(660, 20, 'postgres', 1); node(0, 330, 'shop page', 2); node(660, 330, 'price cache', 3);
+    const edge = (d, i, extra = {}) => svg('path', { d, class: 'edge', 'marker-end': 'url(#wr-a)', 'data-anim': 'draw', 'data-delay': .5 + i * .2, ...extra }, g);
+    edge('M340,75 H648', 0); edge('M340,385 H648', 1); edge('M830,330 V134', 2);
+    svg('text', { class: 'note', x: 494, y: 355, 'text-anchor': 'middle', text: 'get(sku)', 'data-anim': 'fade', 'data-delay': .9 }, g);
+    svg('text', { class: 'note', x: 850, y: 240, text: 'miss', 'data-anim': 'fade', 'data-delay': 1 }, g);
+    // The edge that does not exist: it appears on the click, in amber, with a cross.
+    const miss = svg('g', { 'data-step': 1, 'data-anim': 'fade' }, g);
+    svg('path', { d: 'M170,134 V250 H630 V318', fill: 'none', 'marker-end': 'url(#wr-b)', style: { stroke: 'var(--accent-2)', strokeWidth: 4, strokeDasharray: '14 10' } }, miss);
+    svg('path', { d: 'M388,226 l36,48 M424,226 l-36,48', style: { stroke: 'var(--accent-2)', strokeWidth: 6, strokeLinecap: 'round' } }, miss);
+    svg('text', { class: 'note bad', x: 450, y: 232, text: 'nothing invalidates the entry' }, miss);
+    svg('text', { class: 'note', x: 1120, y: 75, text: 'a replica, seconds behind' , 'data-step': 1, 'data-anim': 'fade' }, g);
+  },
+});
+
+Deck.slide('result', {
+  steps: 1,
+  setup(el) {
+    const g = el.querySelector('svg'), before = [8.2, 11, 9.4, 10.1, 7.6, 11.2], after = [.6, .4, .9, .3, .5, .7];
+    const vals = [...before, ...after], keys = vals.map((_, i) => i);
+    const x = scaleBand(keys, [90, 1620], { padding: .35 }), y = scaleLinear([0, 12], [440, 20]);
+    for (const t of [0, 4, 8, 12]) {
+      svg('line', { class: 'axis', x1: 90, x2: 1620, y1: y(t), y2: y(t) }, g);
+      svg('text', { x: 0, y: y(t) + 8, text: t + ' min' }, g);
+    }
+    el._bars = vals.map((v, i) => {
+      const late = i >= 6, cx = x(i) + x.bw / 2;
+      const rect = svg('rect', { x: x(i), width: x.bw, rx: 5, fill: late ? 'var(--accent)' : 'var(--accent-2)' }, g);
+      const val = svg('text', { class: 'val', x: cx, 'text-anchor': 'middle' }, g);
+      return { v, i, late, rect, val, txt: v.toFixed(1) };
+    });
+    svg('text', { x: (x(0) + x(5) + x.bw) / 2, y: 500, 'text-anchor': 'middle', text: 'six imports before the fix' }, g);
+    const cut = (x(5) + x.bw + x(6)) / 2;
+    const s1 = svg('g', { 'data-step': 1, 'data-anim': 'fade' }, g);
+    svg('line', { x1: cut, x2: cut, y1: 10, y2: 470, style: { stroke: 'var(--ink)', strokeWidth: 2, strokeDasharray: '6 8' } }, s1);
+    svg('text', { x: (x(6) + x(11) + x.bw) / 2, y: 500, 'text-anchor': 'middle', text: 'six imports after the fix' }, s1);
+  },
+  frame(el, st) {
+    for (const b of el._bars) {
+      const p = b.late ? st.p(1, (b.i - 6) * .07, .9, ease.outExpo) : st.p(0, b.i * .07, .9, ease.outExpo);
+      const h = b.v / 12 * 420 * p;
+      b.rect.setAttribute('y', 440 - h); b.rect.setAttribute('height', h);
+      b.val.setAttribute('y', 424 - h); b.val.textContent = b.txt; b.val.style.opacity = p;
+    }
+  },
+});
+</script>
+</body>
+</html>

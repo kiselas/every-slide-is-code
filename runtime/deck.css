@@ -16,6 +16,28 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-let
 .dk-strike { background-image: linear-gradient(transparent 50%, var(--dk-strike, currentColor) 50%, var(--dk-strike, currentColor) calc(50% + .08em), transparent calc(50% + .08em));
   background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 
+/* kinetic text: chars, tracking, scramble (characters in nowrap words), flip (split-flap). Metrics are fixed in init; nothing reflows. */
+.dk-w { display: inline-block; white-space: nowrap; }
+.dk-c { display: inline-block; white-space: pre; }
+.dk-scr .dk-c { text-align: center; }
+.dk-flip { display: inline-block; position: relative; white-space: nowrap; vertical-align: baseline; }
+.dk-fl { position: absolute; left: 0; right: 0; top: 0; visibility: hidden; transform-origin: 50% 50%; backface-visibility: hidden; }
+.dk-fl-t { clip-path: inset(-40% -10% 50% -10%); }
+.dk-fl-b { clip-path: inset(50% -10% -40% -10%); }
+.dk-fl-h { top: 50%; height: 0; border-top: 2px solid currentColor; clip-path: none; }
+
+/* statements: data-say="Setup:|*payoff*" (or Deck.say). The element's font size is the payoff; theme with the custom properties. */
+.dk-say { text-wrap: balance; }
+.dk-say .say-s { display: block; margin: 0 0 var(--dk-say-gap, .16em); font-size: max(var(--dk-say-setup-size, .36em), 26px); line-height: 1.2;
+  font-weight: var(--dk-say-setup-weight, inherit); letter-spacing: var(--dk-say-setup-tracking, .02em); text-transform: var(--dk-say-setup-transform, none);
+  font-family: var(--dk-say-setup-font, inherit); color: var(--dk-say-setup, var(--muted, inherit)); }
+.dk-say .pay { display: block; font-style: normal; font-size: var(--dk-say-pay-size, 1em); line-height: var(--dk-say-pay-lh, 1.02);
+  font-weight: var(--dk-say-pay-weight, inherit); color: var(--dk-say-pay, var(--accent, currentColor)); }
+/* the small caption under a claim: a source or the arithmetic behind it */
+.proof { margin: .9em 0 0; max-width: var(--dk-proof-width, 62ch); font-size: var(--dk-proof-size, 26px); line-height: 1.35; letter-spacing: .01em;
+  font-family: var(--dk-proof-font, inherit); color: var(--dk-proof, var(--muted, inherit)); font-variant-numeric: tabular-nums; }
+
+.dk-fx { position: absolute; inset: 0; z-index: 51; display: none; pointer-events: none; }
 .dk-morph { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
 .dk-morph > * { will-change: transform, opacity; }
 .dk-veil { position: absolute; inset: 0; z-index: 50; pointer-events: none; opacity: 0; }

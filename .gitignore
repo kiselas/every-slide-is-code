@@ -11,3 +11,6 @@ package-lock.json
 deck-kit.zip
 .DS_Store
 !examples/demo/teaser.gif
+
+# agent worktrees
+.claude/

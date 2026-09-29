@@ -1,0 +1,72 @@
+/*! deck-kit code plugin styles · MIT. Palette: derived from the deck's own variables (--bg --ink --muted --accent, optional --accent-2);
+   override any --dk-code-* in the deck's <style>, or pick a preset with data-code-theme="light|dark" on a block or on .deck. */
+:root {
+  --dk-code-size: 28px;          /* font size of code; the block shrinks it to fit, never below data-code-min (24px) */
+  --dk-code-lh: 1.5;
+  --dk-code-pad-x: 40px;
+  --dk-code-pad-y: 30px;
+  --dk-code-radius: 16px;
+  --dk-code-font: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+
+  --dk-code-fg: var(--ink, #1f2328);
+  --dk-code-bg: color-mix(in srgb, var(--ink, #1f2328) 6%, var(--bg, #ffffff));
+  --dk-code-line: color-mix(in srgb, var(--ink, #1f2328) 14%, var(--bg, #ffffff));
+  --dk-code-comment: var(--muted, #6b7280);
+  --dk-code-keyword: var(--accent, #2b4fe0);
+  --dk-code-string: color-mix(in srgb, var(--accent-2, var(--accent, #2b4fe0)) 62%, var(--ink, #1f2328));
+  --dk-code-number: var(--dk-code-string);
+  --dk-code-const: var(--dk-code-string);
+  --dk-code-function: color-mix(in srgb, var(--accent, #2b4fe0) 45%, var(--ink, #1f2328));
+  --dk-code-type: color-mix(in srgb, var(--accent-2, var(--accent, #2b4fe0)) 35%, var(--ink, #1f2328));
+  --dk-code-prop: var(--dk-code-fg);
+  --dk-code-punct: color-mix(in srgb, var(--dk-code-fg) 62%, var(--dk-code-bg));
+  --dk-code-param: var(--dk-code-fg);
+  --dk-code-tag: var(--dk-code-keyword);
+  --dk-code-attr: var(--dk-code-function);
+  --dk-code-ins: var(--accent, #2b4fe0);          /* diff: added   (blue-ish, never green alone) */
+  --dk-code-del: var(--accent-2, #b45309);        /* diff: removed (amber-ish, never red alone)  */
+}
+.deck[data-code-theme="light"], .dk-code[data-code-theme="light"] {
+  --dk-code-fg: #1f2328; --dk-code-bg: #f4f4f1; --dk-code-line: #dcdcd6; --dk-code-comment: #667085; --dk-code-keyword: #6b3fc7;
+  --dk-code-string: #0b6b4d; --dk-code-number: #a94f00; --dk-code-const: #a94f00; --dk-code-function: #0b5cad; --dk-code-type: #8a5a00;
+  --dk-code-prop: #1f2328; --dk-code-punct: #59636e; --dk-code-param: #1f2328; --dk-code-tag: #0b5cad; --dk-code-attr: #6b3fc7;
+  --dk-code-ins: #0b5cad; --dk-code-del: #a94f00;
+}
+.deck[data-code-theme="dark"], .dk-code[data-code-theme="dark"] {
+  --dk-code-fg: #e8e8e6; --dk-code-bg: #16181d; --dk-code-line: #2c303a; --dk-code-comment: #8d95a3; --dk-code-keyword: #c8adff;
+  --dk-code-string: #9dd8b3; --dk-code-number: #ffb86b; --dk-code-const: #ffb86b; --dk-code-function: #7fb8ff; --dk-code-type: #f2c879;
+  --dk-code-prop: #e8e8e6; --dk-code-punct: #9ba4b3; --dk-code-param: #e8e8e6; --dk-code-tag: #7fb8ff; --dk-code-attr: #c8adff;
+  --dk-code-ins: #7fb8ff; --dk-code-del: #ffb86b;
+}
+
+.dk-code { display: block; position: relative; box-sizing: border-box; margin: 0; padding: 0; border-radius: var(--dk-code-radius);
+  background: var(--dk-code-bg); color: var(--dk-code-fg); font: 400 var(--dk-code-size) / var(--dk-code-lh) var(--dk-code-font);
+  font-variant-ligatures: none; font-kerning: none; letter-spacing: 0; white-space: pre; tab-size: 2; text-align: left; text-transform: none; }
+.dk-code-bar { display: flex; align-items: center; padding: 14px 24px 0; }
+.dk-code-file { display: inline-block; padding: 6px 16px; border-radius: 8px; background: var(--dk-code-line); color: var(--dk-code-fg);
+  font: 500 22px/1.3 var(--dk-code-font); letter-spacing: 0; }
+.dk-code-body { position: relative; }
+.dk-code-tok, .dk-code-num, .dk-code-sign, .dk-code-band, .dk-code-caret { position: absolute; left: 0; top: 0; white-space: pre; }
+.dk-code-tok[data-r="comment"] { color: var(--dk-code-comment); font-style: italic; }
+.dk-code-tok[data-r="keyword"] { color: var(--dk-code-keyword); }
+.dk-code-tok[data-r="string"] { color: var(--dk-code-string); }
+.dk-code-tok[data-r="number"] { color: var(--dk-code-number); }
+.dk-code-tok[data-r="const"] { color: var(--dk-code-const); }
+.dk-code-tok[data-r="function"] { color: var(--dk-code-function); }
+.dk-code-tok[data-r="type"] { color: var(--dk-code-type); }
+.dk-code-tok[data-r="prop"] { color: var(--dk-code-prop); }
+.dk-code-tok[data-r="punct"] { color: var(--dk-code-punct); }
+.dk-code-tok[data-r="param"] { color: var(--dk-code-param); }
+.dk-code-tok[data-r="tag"] { color: var(--dk-code-tag); }
+.dk-code-tok[data-r="attr"] { color: var(--dk-code-attr); }
+.dk-code-tok[data-r="ins"] { color: var(--dk-code-ins); }
+.dk-code-tok[data-r="del"] { color: var(--dk-code-del); }
+.dk-code-num { text-align: right; color: var(--dk-code-comment); }
+.dk-code-sign { font-weight: 700; }
+.dk-code-sign[data-k="ins"] { color: var(--dk-code-ins); }
+.dk-code-sign[data-k="del"] { color: var(--dk-code-del); }
+.dk-code-band { width: 100%; }
+.dk-code-band[data-k="ins"] { background: color-mix(in srgb, var(--dk-code-ins) 15%, transparent); box-shadow: inset 6px 0 0 var(--dk-code-ins); }
+.dk-code-band[data-k="del"] { background: color-mix(in srgb, var(--dk-code-del) 15%, transparent); box-shadow: inset 6px 0 0 var(--dk-code-del); }
+.dk-code-caret { width: .11em; background: var(--dk-code-fg); visibility: hidden; }
+.dk-code-mark { display: none; }

@@ -1,3 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blackbox · Showcase deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=block">
+<style id="deck-kit-css">
+/*! deck-kit runtime styles · MIT. Mechanics only: the look of a deck lives in its own <style>. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--dk-letterbox, #000); }
+.deck { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; contain: layout paint; }
+.dk-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.dk-layer { position: absolute; inset: 0; display: none; z-index: 0; backface-visibility: hidden; }
+.dk-layer.is-on { display: block; }
+.slide { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; display: none; contain: layout paint style; }
+.dk-layer.is-on > .slide { display: block; }
+.slide > .notes { display: none !important; }
+.slide [data-anim], .slide [data-step], .slide [data-stagger] > * { transform-box: fill-box; transform-origin: center; }
+.slide [data-anim="count"] { font-variant-numeric: tabular-nums; }
+.dk-mask-i { display: inline-block; will-change: transform; }
+.dk-caret::after { content: ''; display: inline-block; width: .07em; height: .95em; margin-left: .05em; vertical-align: -.1em; background: currentColor; }
+.dk-highlight { background-image: linear-gradient(transparent 56%, var(--dk-mark, #ffe066) 56%, var(--dk-mark, #ffe066) 90%, transparent 90%);
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.dk-strike { background-image: linear-gradient(transparent 50%, var(--dk-strike, currentColor) 50%, var(--dk-strike, currentColor) calc(50% + .08em), transparent calc(50% + .08em));
+  background-repeat: no-repeat; background-size: 0 100%; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+/* kinetic text: chars, tracking, scramble (characters in nowrap words), flip (split-flap). Metrics are fixed in init; nothing reflows. */
+.dk-w { display: inline-block; white-space: nowrap; }
+.dk-c { display: inline-block; white-space: pre; }
+.dk-scr .dk-c { text-align: center; }
+.dk-flip { display: inline-block; position: relative; white-space: nowrap; vertical-align: baseline; }
+.dk-fl { position: absolute; left: 0; right: 0; top: 0; visibility: hidden; transform-origin: 50% 50%; backface-visibility: hidden; }
+.dk-fl-t { clip-path: inset(-40% -10% 50% -10%); }
+.dk-fl-b { clip-path: inset(50% -10% -40% -10%); }
+.dk-fl-h { top: 50%; height: 0; border-top: 2px solid currentColor; clip-path: none; }
+
+/* statements: data-say="Setup:|*payoff*" (or Deck.say). The element's font size is the payoff; theme with the custom properties. */
+.dk-say { text-wrap: balance; }
+.dk-say .say-s { display: block; margin: 0 0 var(--dk-say-gap, .16em); font-size: max(var(--dk-say-setup-size, .36em), 26px); line-height: 1.2;
+  font-weight: var(--dk-say-setup-weight, inherit); letter-spacing: var(--dk-say-setup-tracking, .02em); text-transform: var(--dk-say-setup-transform, none);
+  font-family: var(--dk-say-setup-font, inherit); color: var(--dk-say-setup, var(--muted, inherit)); }
+.dk-say .pay { display: block; font-style: normal; font-size: var(--dk-say-pay-size, 1em); line-height: var(--dk-say-pay-lh, 1.02);
+  font-weight: var(--dk-say-pay-weight, inherit); color: var(--dk-say-pay, var(--accent, currentColor)); }
+/* the small caption under a claim: a source or the arithmetic behind it */
+.proof { margin: .9em 0 0; max-width: var(--dk-proof-width, 62ch); font-size: var(--dk-proof-size, 26px); line-height: 1.35; letter-spacing: .01em;
+  font-family: var(--dk-proof-font, inherit); color: var(--dk-proof, var(--muted, inherit)); font-variant-numeric: tabular-nums; }
+
+.dk-fx { position: absolute; inset: 0; z-index: 51; display: none; pointer-events: none; }
+.dk-morph { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.dk-morph > * { will-change: transform, opacity; }
+.dk-veil { position: absolute; inset: 0; z-index: 50; pointer-events: none; opacity: 0; }
+.dk-blackout { position: absolute; inset: 0; z-index: 90; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; }
+.dk-blackout.is-on { opacity: 1; }
+.dk-progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 6px; z-index: 60; transform-origin: 0 50%;
+  background: var(--dk-progress, currentColor); opacity: .5; transform: scaleX(0); }
+.dk-number { position: absolute; right: 56px; bottom: 36px; z-index: 60; font: 500 20px/1 var(--dk-number-font, ui-monospace, monospace);
+  color: var(--dk-number, currentColor); opacity: .55; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.dk-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.dk-mode-live.dk-idle, .dk-mode-live.dk-idle * { cursor: none !important; }
+.dk-mode-render *, .dk-mode-embed * { cursor: none !important; }
+
+/* overview */
+.dk-overview .deck { background: var(--dk-overview-bg, #1b1b1b) !important; }
+.dk-overview .dk-stage, .dk-overview .dk-progress, .dk-overview .dk-number { display: none; }
+.dk-overview .dk-layer { cursor: pointer; outline: 2px solid rgba(255,255,255,.08); }
+.dk-overview .dk-layer.dk-ov-sel { outline: 14px solid var(--dk-ov-accent, #ffd23f); z-index: 2; }
+
+/* help */
+.dk-help { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(0,0,0,.55);
+  font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; color: #111; }
+.dk-help.is-on { display: grid; }
+.dk-help > div { background: #fff; padding: 24px 30px 18px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); max-width: min(760px, 92vw); }
+.dk-help h3 { margin: 0 0 12px; font-size: 18px; }
+.dk-help-cols { display: flex; flex-wrap: wrap; gap: 8px 36px; }
+.dk-help caption { text-align: left; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #888; padding-bottom: 4px; }
+.dk-help td { padding: 3px 14px 3px 0; vertical-align: top; } .dk-help td:first-child { color: #555; white-space: nowrap; }
+.dk-help p { margin: 14px 0 0; color: #666; font-size: 13px; }
+kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px solid rgba(127,127,127,.45); border-bottom-width: 2px; border-radius: 4px;
+  font: 600 .85em/1.5 ui-monospace, monospace; text-align: center; }
+
+/* on-screen controls (live mode). Theme with --dk-ui-bg / --dk-ui-fg / --dk-ui-accent. */
+.dk-ui { position: fixed; left: 50%; bottom: 18px; z-index: 80; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; font: 500 14px/1 ui-sans-serif, system-ui, sans-serif; color: var(--dk-ui-fg, #f4f4f4);
+  width: min(760px, calc(100vw - 32px)); padding: 6px 6px 6px; box-sizing: border-box; border-radius: 16px;
+  background: var(--dk-ui-bg, rgba(22,22,24,.88)); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(8px); }
+.dk-ui-on .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dk-scrub { display: flex; gap: 3px; height: 16px; align-items: center; padding: 0 6px 2px; }
+.dk-seg { flex: 1; height: 16px; padding: 6px 0; border: 0; background: none; cursor: pointer; position: relative; }
+.dk-seg::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-track, rgba(255,255,255,.28)); }
+.dk-seg i { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: var(--dk-ui-accent, #ffd23f); transform-origin: 0 50%; transform: scaleX(0); }
+.dk-seg:hover::before { background: rgba(255,255,255,.6); }
+.dk-bar { display: flex; align-items: center; gap: 4px; }
+.dk-b { position: relative; width: 40px; height: 40px; flex: none; border: 0; border-radius: 10px; background: none; color: inherit; cursor: pointer;
+  display: grid; place-items: center; font: 600 17px/1 ui-sans-serif, system-ui, sans-serif; }
+.dk-b svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-b:hover { background: rgba(255,255,255,.12); } .dk-b:disabled { opacity: .3; cursor: default; background: none; }
+.dk-b-next { background: rgba(255,255,255,.14); }
+.dk-where { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.dk-num { font-variant-numeric: tabular-nums; opacity: .7; flex: none; }
+.dk-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dk-steps { display: flex; gap: 5px; flex: none; }
+.dk-steps i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .55; }
+.dk-steps i.on { background: currentColor; opacity: 1; }
+.dk-sep { width: 1px; height: 24px; background: rgba(255,255,255,.2); margin: 0 4px; }
+[data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; padding: 6px 9px; border-radius: 7px; background: #111; color: #fff; font: 500 13px/1 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-seg[data-tip]:hover::after { bottom: 18px; }
+.dk-edge { position: fixed; top: 50%; z-index: 70; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--dk-ui-bg, rgba(22,22,24,.7)); color: var(--dk-ui-fg, #fff); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.dk-edge svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-edge-l { left: 18px; } .dk-edge-r { right: 18px; }
+.dk-edge-l-on .dk-edge-l, .dk-edge-r-on .dk-edge-r { opacity: .8; }
+.dk-edge-l-on, .dk-edge-r-on { cursor: pointer; }
+.dk-hint { position: fixed; left: 50%; top: 22px; z-index: 81; transform: translate(-50%, -8px); opacity: 0; transition: opacity .4s, transform .4s;
+  padding: 10px 16px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.86)); color: var(--dk-ui-fg, #f4f4f4);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; pointer-events: none; white-space: nowrap; }
+.dk-hint.is-on { opacity: 1; transform: translate(-50%, 0); }
+.dk-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%) scale(.96); opacity: 0; transition: opacity .2s, transform .2s;
+  padding: 12px 18px; border-radius: 10px; background: var(--dk-ui-bg, rgba(22,22,24,.9)); color: var(--dk-ui-fg, #fff);
+  font: 600 16px/1.3 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.dk-toast.is-on { opacity: 1; transform: translate(-50%, -50%); }
+.dk-hud { position: fixed; left: 8px; top: 8px; z-index: 99; padding: 5px 8px; border-radius: 6px; background: rgba(0,0,0,.75); color: #9f9;
+  font: 12px/1.2 ui-monospace, monospace; pointer-events: none; }
+.dk-idle .dk-ui, .dk-idle .dk-edge { opacity: 0 !important; pointer-events: none; }
+.dk-warm .dk-layer { visibility: hidden !important; }
+.dk-ov-hint { position: fixed; left: 50%; top: 16px; z-index: 81; transform: translateX(-50%); color: rgba(255,255,255,.7);
+  font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+.dk-ov-cap { position: absolute; z-index: 3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: rgba(255,255,255,.75);
+  font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; line-height: 1.2; pointer-events: none; }
+.dk-overview .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .dk-ui, .dk-hint, .dk-toast, .dk-edge { transition: none; } }
+
+/* presenter view */
+body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
+.dk-presenter .deck { display: none; }
+.dk-pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.dk-pv header { display: flex; gap: 28px; align-items: baseline; padding: 14px 22px; border-bottom: 1px solid #2a2a2a; }
+.dk-pv-timer { font: 600 34px/1 ui-monospace, monospace; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dk-pv-pos { flex: 1; color: #aaa; }
+.dk-pv header button { background: #262626; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  font: 600 15px/1 ui-sans-serif, system-ui, sans-serif; } .dk-pv header button:hover { background: #333; } .dk-pv-clock { font: 500 22px/1 ui-monospace, monospace; color: #aaa; }
+.dk-pv main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding: 22px; min-height: 0; }
+.dk-pv aside { display: grid; grid-template-rows: auto 1fr; gap: 18px; min-height: 0; }
+.dk-pv label { display: block; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+.dk-pv-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+.dk-pv-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.dk-pv-notes { overflow: auto; font-size: 24px; line-height: 1.45; color: #f2f2f2; padding-right: 8px; }
+.dk-pv-notes p { margin: 0 0 .7em; } .dk-pv-notes em { color: #777; }
+
+/* print (vector PDF export) */
+.dk-printing, .dk-printing body { height: auto; overflow: visible; background: #fff; }
+.dk-printing .deck:not(.dk-print), .dk-printing .dk-help { display: none !important; }
+.deck.dk-print { position: static; transform: none; width: auto; height: auto; overflow: visible; contain: none; background: none; }
+.dk-page { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+.dk-page:last-child { break-after: auto; page-break-after: auto; }
+.dk-page > .dk-page-stage { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dk-page > .dk-layer { display: block; }
+@media print { html, body { overflow: visible !important; height: auto !important; } }
+</style>
+<style>
+/* Blackbox: a flight recorder for production. The deck is its printout: warm graphite, paper-white ink, the recorder's orange.
+   Orange means one thing, "the moment that matters" (the payoff words, the failure). Amber is recorded signal. */
+:root {
+  --bg: #15130f; --ink: #f1ece2; --muted: #9a9282; --rule: #3b362d; --accent: #ff5a1f; --amber: #e8b04a;
+  --display: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --dk-letterbox: #0b0a08; --dk-progress: var(--accent); --dk-number-font: var(--mono); --dk-mark: rgba(255, 90, 31, .32);
+  --dk-say-setup: var(--muted); --dk-say-pay: var(--accent); --dk-proof: var(--muted); --dk-proof-font: var(--mono);
+  --dk-say-setup-font: var(--mono); --dk-say-setup-weight: 500; --dk-say-setup-size: .3em; --dk-say-gap: .22em;
+}
+.deck { background: var(--bg); color: var(--ink); font-family: var(--mono); }
+.slide { padding: 110px 150px 130px; }
+.kicker { font: 500 24px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--amber); margin: 0 0 40px; }
+.tc { position: absolute; right: 150px; top: 110px; margin: 0; font: 500 24px/1 var(--mono); color: var(--muted); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.foot { position: absolute; left: 150px; bottom: 64px; margin: 0; font: 500 22px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.foot i { color: var(--accent); font-style: normal; }
+h1 { font: 700 270px/.86 var(--display); letter-spacing: -.035em; margin: 0; white-space: nowrap; width: 1620px; }
+h2 { font: 700 88px/1.02 var(--display); letter-spacing: -.02em; margin: 0 0 40px; max-width: 1500px; }
+.lede { font: 400 40px/1.35 var(--mono); color: var(--ink); max-width: 1300px; margin: 0; }
+.stmt { font: 700 150px/1 var(--display); letter-spacing: -.03em; max-width: 1600px; margin: 60px 0 0; }
+.stmt.sm { font-size: 132px; }
+.big { font: 700 380px/.8 var(--display); letter-spacing: -.045em; color: var(--accent); margin: 30px 0 0; font-variant-numeric: tabular-nums; }
+.unit { font: 500 46px/1 var(--mono); color: var(--muted); letter-spacing: .2em; text-transform: uppercase; margin: 26px 0 0; }
+.status { font: 700 190px/1 var(--display); letter-spacing: -.03em; margin: 40px 0 0; }
+.status small { display: block; font: 500 32px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 22px; }
+.status [data-anim="flip"] { color: var(--accent); }
+.log { position: absolute; right: 150px; bottom: 150px; width: 820px; margin: 0; padding: 30px 36px; border: 2px solid var(--rule); border-radius: 6px; font: 400 26px/1.65 var(--mono); color: var(--muted); }
+.log p { margin: 0; white-space: nowrap; } .log b { color: var(--ink); font-weight: 500; } .log em { color: var(--accent); font-style: normal; }
+.term { margin: 30px 0 0; padding: 44px 52px; width: 1420px; border: 2px solid var(--rule); border-radius: 6px; font: 400 44px/1.6 var(--mono); }
+.term p { margin: 0; white-space: nowrap; } .term .ok { color: var(--amber); } .term .hot { color: var(--accent); }
+.chart text { font: 500 26px var(--mono); fill: var(--muted); }
+.chart .lab { fill: var(--ink); letter-spacing: .12em; }
+.chart .axis { stroke: var(--rule); stroke-width: 2; }
+.chart .tag { font: 700 30px var(--mono); fill: var(--accent); }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 260px 1fr; gap: 24px 40px; max-width: 1600px; }
+.legend li { display: contents; }
+.legend b { font: 700 36px/1.25 var(--mono); color: var(--accent); }
+.legend span { font: 400 34px/1.3 var(--mono); color: var(--ink); }
+</style>
+</head>
+<body>
+<!-- Default transition: push. Each slide names how it ENTERS; the six new ones appear once each, on purpose. A real deck picks two or three (06-transitions.md). -->
+<div class="deck" data-transition="push" data-chrome="progress,number">
+
+  <section class="slide" id="title" data-title="Blackbox: every incident, on tape">
+    <p class="kicker" data-anim="fade">Launch · 2026</p>
+    <p class="tc">T+00:00</p>
+    <h1 data-anim="tracking" data-spread=".14">BLACKBOX</h1>
+    <p class="lede" style="margin-top:70px" data-anim="chars" data-stagger=".026" data-delay=".9">Every incident, on tape.</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-anim="fade" data-delay="2">Every figure in this deck is illustrative.</p>
+    <p class="foot"><i>●</i> Rec · showcase deck</p>
+    <aside class="notes"><p>Blackbox records every request on a production path and lets you replay an incident on a laptop. This deck is also the kit's showcase: each slide uses one new transition or text effect, so the notes say which and why.</p>
+    <p>Title: <code>tracking</code>, the letters spread from tight to loose while the tagline arrives character by character (<code>chars</code>). Nothing here is real data; the proof line says so.</p></aside>
+  </section>
+
+  <section class="slide" id="problem" data-transition="whip" data-dir="left">
+    <p class="kicker">The problem</p>
+    <p class="tc">T+00:30</p>
+    <h2 class="stmt" data-say data-fit="3" data-anim="rise" data-stagger=".4">Incidents leave no tape.|*You debug from rumours.*</h2>
+    <p class="proof" data-step="1" data-anim="rise">Illustrative: median 3 h 40 min to reproduce a production bug.</p>
+    <p class="foot"><i>●</i> Rec · 02</p>
+    <aside class="notes"><p>Transition: <code>whip</code>. A fast pan with motion blur says "and meanwhile": we leave the calm title and land in the pain at speed.</p>
+    <p>The statement is <code>data-say</code>: a small setup, then the payoff in the accent colour, eight words in all. Click for the proof line, the number behind the claim.</p></aside>
+  </section>
+
+  <section class="slide" id="outage" data-transition="flash" data-grain="live">
+    <p class="kicker">The incident</p>
+    <p class="tc">T+03:12</p>
+    <h2 data-anim="scramble" data-fit="2">At 03:12 checkout stopped</h2>
+    <div class="status"><small>Checkout</small><span data-anim="flip" data-words="OK|SLOW|DOWN" data-step="0">OK</span></div>
+    <div class="log" data-step="1" data-anim="fade">
+      <p data-step="1" data-anim="rise"><b>03:12:07</b> payments  retry 3/3 <em>failed</em></p>
+      <p data-step="2" data-anim="rise"><b>03:12:11</b> gateway   503 <em>upstream timeout</em></p>
+    </div>
+    <p class="foot"><i>●</i> Rec · 03</p>
+    <aside class="notes"><p>Transition: <code>flash</code>. The old slide burns to white and this one comes out of the light with rays: the moment it happened. This slide also keeps the film grain alive (data-grain="live"); the stage freezes it everywhere else.</p>
+    <p>The title settles out of noise (<code>scramble</code>). The status word is a split-flap (<code>flip</code>): one click, one word: OK, SLOW, DOWN. The width of the widest word is reserved, so nothing around it moves.</p></aside>
+  </section>
+
+  <section class="slide" id="noise" data-transition="glitch">
+    <p class="kicker">The tools we have</p>
+    <p class="tc">T+03:40</p>
+    <h2 data-anim="chars" data-stagger=".02" data-fit="2">Three tools, three timelines</h2>
+    <svg class="chart" width="1620" height="560" viewBox="0 0 1620 560"></svg>
+    <p class="foot"><i>●</i> Rec · 04</p>
+    <aside class="notes"><p>Transition: <code>glitch</code>. Offset stripes seeded by the frame index: something is corrupt. Here it is the evidence, three sources that disagree.</p>
+    <p>The lines are drawn with <code>Deck.fx.boil</code>: a hand-drawn jitter that changes ten times a second and freezes in exports. The slide declares <code>ambient: 10</code>, so it redraws ten times a second and no more. Click: the three claimed start times.</p></aside>
+  </section>
+
+  <section class="slide" id="record" data-transition="dither">
+    <p class="kicker">How it works</p>
+    <p class="tc">T+04:15</p>
+    <h2 data-anim="mask" data-fit="2">Blackbox samples every request</h2>
+    <svg class="chart" width="1620" height="520" viewBox="0 0 1620 520"></svg>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-anim="fade" data-delay="1.4">Illustrative: 25 µs of overhead per request at p99.</p>
+    <p class="foot"><i>●</i> Rec · 05</p>
+    <aside class="notes"><p>Transition: <code>dither</code>. A Bayer threshold mask, cell by cell: the picture turns into samples. It suits exactly this slide, a signal becoming discrete points.</p>
+    <p>Click: the stems turn orange and the label says there is no sampling. The claim is that every request is on the tape, not one in a hundred.</p></aside>
+  </section>
+
+  <section class="slide" id="replay" data-transition="lightleak">
+    <p class="kicker">The payoff</p>
+    <p class="tc">T+06:00</p>
+    <h2 data-fit="2">Replay the incident on your laptop</h2>
+    <div class="term" data-lint-skip>
+      <p data-anim="type" data-delay=".5"><span class="ok">$</span> blackbox replay --at 03:12:07</p>
+      <p data-step="1" data-anim="fade">→ 4,182 requests loaded</p>
+      <p data-step="2" data-anim="fade" class="hot">→ checkout reproduced in 11 s</p>
+    </div>
+    <p class="foot"><i>●</i> Rec · 06</p>
+    <aside class="notes"><p>Transition: <code>lightleak</code>. A warm leak over a crossfade: a change of mood, from the pain to the way out. It sweeps the other way when you go back.</p>
+    <p>Type the command, then click for the load and the reproduction. Numbers are illustrative.</p></aside>
+  </section>
+
+  <section class="slide" id="number" data-transition="punch">
+    <p class="kicker">The result</p>
+    <p class="tc">T+06:40</p>
+    <h2 data-fit="2">Root cause in 38 seconds, not hours</h2>
+    <div class="big" data-anim="count" data-delay=".2">38</div>
+    <p class="unit">seconds</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px" data-step="1" data-anim="rise">Median from alert to root cause: 3 h 40 min before, 38 s with Blackbox. Illustrative.</p>
+    <p class="foot"><i>●</i> Rec · 07</p>
+    <aside class="notes"><p>Transition: <code>punch</code>. A hard cut on the beat: the new slide lands a little too big and settles, the old one lingers as a ghost. One accent per section, and this is the number that carries the deck.</p>
+    <p>Let the number count, then click for the arithmetic behind it.</p></aside>
+  </section>
+
+  <section class="slide" id="plans" data-title="Blackbox grows from teams to enterprises">
+    <p class="kicker">Pricing</p>
+    <p class="tc">T+07:20</p>
+    <h2 class="stmt sm" style="margin-top:110px">Built for <span data-anim="flip" data-words="teams|platforms|enterprises" data-step="0" style="color:var(--accent)">teams</span></h2>
+    <p class="lede" style="margin-top:70px; color:var(--muted)">One click, one word: three states.</p>
+    <p class="proof" style="position:absolute; left:150px; bottom:128px">Illustrative plans: free up to 3 services, then per service, then custom.</p>
+    <p class="foot"><i>●</i> Rec · 08</p>
+    <aside class="notes"><p>Transition: plain <code>push</code>, the default: we continue the same thought.</p>
+    <p>Split-flap words (<code>flip</code>, <code>data-words</code>): click twice to walk from teams to platforms to enterprises. The line never reflows, because the widest word is measured once at load.</p></aside>
+  </section>
+
+  <section class="slide" id="ask" data-transition="iris">
+    <p class="kicker">The ask</p>
+    <p class="tc">T+08:00</p>
+    <h2 class="stmt sm" data-say="Pilot on 20 services.|*Decide by 14 October.*" data-fit="3" data-anim="rise" data-stagger=".45">x</h2>
+    <p class="proof" data-step="1" data-anim="rise">Six weeks, one on-call rotation. Illustrative.</p>
+    <p class="foot"><i>●</i> Rec · 09</p>
+    <aside class="notes"><p>Transition: <code>iris</code>, opening from the middle onto the decision. End on the ask, not on "Questions?".</p>
+    <p>The statement again uses <code>data-say</code>: eight words, the payoff is the date.</p></aside>
+  </section>
+
+  <section class="slide" id="legend" data-transition="dip" data-title="Appendix: what each transition says">
+    <p class="kicker">Appendix</p>
+    <p class="tc">T+09:00</p>
+    <h2 data-fit="2">Six transitions, six meanings</h2>
+    <ul class="legend" data-stagger=".09" data-anim="rise">
+      <li><b>flash</b><span>The moment it happened: burn to white, rays.</span></li>
+      <li><b>punch</b><span>An accent on the beat: hard cut, zoom, ghost.</span></li>
+      <li><b>whip</b><span>Meanwhile: a fast pan, the pace picks up.</span></li>
+      <li><b>glitch</b><span>Broken or corrupt: offset stripes.</span></li>
+      <li><b>lightleak</b><span>Mood change: warm light over a crossfade.</span></li>
+      <li><b>dither</b><span>Sampling, going digital: a Bayer mask.</span></li>
+    </ul>
+    <p class="foot"><i>●</i> Rec · 10</p>
+    <aside class="notes"><p>Reference slide, not part of the talk. A real deck picks two or three of these and ties each to one meaning; this one uses all six to show them.</p></aside>
+  </section>
+
+</div>
+<script id="deck-kit-js">
 /*! deck-kit runtime · every slide is code · MIT
  * The whole deck is a pure function of (slide, step, t): no animation state is
  * accumulated between frames. That gives exact rest frames for PDF/PPTX, a
@@ -1614,3 +1940,84 @@ const api = {
 window.Deck = api;
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : queueMicrotask(init);
 })();
+</script>
+<script>
+const { svg, scaleLinear, linePath, ease, lerp, clamp, mix, seg, fx } = Deck;
+const C = { bg: '#15130f', accent: '#ff5a1f', amber: '#e8b04a', muted: '#9a9282', rule: '#3b362d' };
+
+/* ── Stage: chapter light, vignette, film grain. Grain only ticks during transitions and on slides marked data-grain="live";
+   elsewhere it is frozen, so a still slide goes idle. ?nograin removes it entirely. */
+const grain = fx.grain({ fps: 18, seed: 5 });
+const CHAPTER = ['#e8b04a', '#e8b04a', '#ff5a1f', '#ff3d1f', '#e8b04a', '#ff8a3d', '#ff5a1f', '#e8b04a', '#ff5a1f', '#9a9282'];
+let live = [], base;
+Deck.stage({
+  ambient: grain.fps,
+  setup(ctx, { W, H, deck }) {
+    live = [...deck.querySelectorAll('.slide')].map(s => s.dataset.grain === 'live');
+    grain.warm();                                               // build the tiles now, not on the first transition frame
+    base = document.createElement('canvas'); base.width = W; base.height = H;   // graphite + vignette never change: bake them once
+    const b = base.getContext('2d'); b.fillStyle = C.bg; b.fillRect(0, 0, W, H);
+    fx.vignette(b, { W, H }, { strength: .34, inner: .45 });
+  },
+  draw(ctx, S) {
+    ctx.drawImage(base, 0, 0, S.W, S.H);
+    const i0 = Math.floor(S.i);       // chapter light: cross-fade to the next chapter's colour while the camera moves
+    fx.glow(ctx, S.W * .84, S.H * .12, 700, CHAPTER[i0], { a: .16, core: .5, to: CHAPTER[Math.min(CHAPTER.length - 1, i0 + 1)], t: S.i - i0 });
+    grain.draw(ctx, S, .09, S.p < 1 || live[Math.round(S.i)]);
+  },
+});
+
+/* ── 04: three claims about the same second, each drawn with line boil. */
+Deck.slide('noise', {
+  steps: 1, ambient: 10,
+  setup(el) {
+    const g = el.querySelector('svg'), N = fx.noise(3), X0 = 230, X1 = 1620;
+    const rows = [['LOGS', .56, '03:12:07'], ['METRICS', .42, '03:12:04'], ['TRACES', .71, '03:12:11']];
+    el._rows = rows.map(([label, at, time], k) => {
+      const y0 = 120 + k * 190;
+      svg('text', { x: 0, y: y0 + 9, text: label, class: 'lab' }, g);
+      svg('line', { class: 'axis', x1: X0, x2: X1, y1: y0 + 46, y2: y0 + 46 }, g);
+      const base = Array.from({ length: 70 }, (_, i) => {
+        const u = i / 69, spike = Math.exp(-(((u - at) / .025) ** 2)) * 92;
+        return [X0 + u * (X1 - X0), y0 + 30 - (N.fbm(u * 9, k * 4) - .3) * 40 - spike];
+      });
+      const path = svg('path', { fill: 'none', stroke: C.amber, 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'data-anim': 'draw', 'data-delay': .3 + k * .25 }, g);
+      const px = X0 + at * (X1 - X0);
+      svg('circle', { cx: px, cy: y0 - 62, r: 11, fill: C.accent, 'data-step': 1, 'data-anim': 'pop', 'data-delay': k * .12 }, g);
+      svg('text', { x: px + 24, y: y0 - 50, text: time, class: 'tag', 'data-step': 1, 'data-anim': 'rise', 'data-delay': k * .12 }, g);
+      return { path, base, k };
+    });
+  },
+  frame(el, st) {
+    const T = st.rest ? 0 : st.T;
+    for (const r of el._rows) r.path.setAttribute('d', linePath(fx.boil.pts(r.base, 40 + r.k, T, 3, 10), 'linear'));
+  },
+});
+
+/* ── 05: a signal, and the samples Blackbox takes of it. */
+Deck.slide('record', {
+  steps: 1,
+  setup(el) {
+    const g = el.querySelector('svg'), x = scaleLinear([0, 1], [0, 1620]), Y0 = 420;
+    const f = u => Y0 - 150 - Math.sin(u * 9.4) * 80 - Math.sin(u * 23 + 1) * 34 - Math.max(0, Math.sin(u * 3.2 - 1.6)) * 60;
+    svg('line', { class: 'axis', x1: 0, x2: 1620, y1: Y0, y2: Y0 }, g);
+    svg('path', { d: linePath(Array.from({ length: 160 }, (_, i) => [x(i / 159), f(i / 159)]), 'monotone'), fill: 'none', stroke: C.amber, 'stroke-width': 5, 'stroke-linecap': 'round', 'data-anim': 'draw' }, g);
+    el._stems = Array.from({ length: 34 }, (_, i) => {
+      const u = (i + .5) / 34, px = x(u);
+      return { i, y: f(u), line: svg('line', { x1: px, x2: px, y1: Y0, y2: Y0, stroke: C.amber, 'stroke-width': 4 }, g), dot: svg('circle', { cx: px, cy: Y0, r: 9, fill: C.amber }, g) };
+    });
+    svg('text', { x: 0, y: 500, text: 'every request, no sampling', class: 'tag', 'data-step': 1, 'data-anim': 'rise' }, g);
+  },
+  frame(el, st) {
+    const hot = st.p(1, 0, .5, ease.outCubic), col = mix(C.amber, C.accent, hot);
+    for (const s of el._stems) {
+      const p = st.p(0, .5 + s.i * .028, .55, ease.outExpo), y = 420 + (s.y - 420) * p;
+      s.line.setAttribute('y2', y); s.dot.setAttribute('cy', y);
+      s.line.style.stroke = s.dot.style.fill = col;
+    }
+  },
+});
+</script>
+</body>
+</html>
