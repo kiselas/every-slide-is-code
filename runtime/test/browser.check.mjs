@@ -393,3 +393,83 @@ const fails = reporters.flatMap(r => r.fails), checks = reporters.reduce((a, r) 
 console.log(`${checks} checks in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${fails.length} failed`);
 if (fails.length) { console.error('\nFAILED:\n - ' + fails.join('\n - ') + `\n\nframes of the failing checks: ${keep}`); process.exitCode = 1; }
 else { console.log('browser checks passed'); fs.rmSync(tmp, { recursive: true, force: true }); }
+
+/* ───────────────────────── live annotation (11-presenting.md) ─────────────────────────
+ * D/H/L/E draw on a canvas over the slide; a mode swallows clicks and swipes; nothing of it exists until used, in any export, or when
+ * data-annotate="off". Runs on the template deck (--only template includes it). */
+if (!only || 'template'.includes(only)) {
+  const A = reporter('live annotation'), ab = await chromium.launch({ ...launch, args: ['--force-color-profile=srgb', '--disable-lcd-text'] });
+  try {
+    const actx = async extra => { const c = await ab.newContext({ viewport: { width: 1280, height: 720 }, ...extra }); await c.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort()); return c; };
+    const layers = '.dk-ann,.dk-ann-cap,.dk-ann-tools,.dk-ann-laser', state = page => page.evaluate(() => `${Deck.state.i}.${Deck.state.step}`);
+    const tpl = path.join(root, 'template/deck.html');
+    const ctx = await actx(), page = await open(ctx, url(tpl, '?perf'));
+    A.need(await page.evaluate(q => document.querySelectorAll(q).length, layers) === 0, 'nothing of the annotation exists before first use (lazy)');
+    await page.evaluate(() => Deck.goto(1, Deck.state.step));
+    A.need((await settle(page)).idle, 'a still slide is idle before drawing');
+    const before = await state(page);
+    await page.keyboard.press('d');
+    const drag = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); for (let i = 1; i <= 12; i++) await page.mouse.move(x + i * 30, y + Math.sin(i / 2) * 40); await page.mouse.up(); };
+    await drag(300, 300);
+    await page.mouse.click(700, 400); await page.mouse.click(30, 400);
+    await page.keyboard.press('1'); await page.keyboard.press('2');
+    A.need(await state(page) === before, `draw mode: clicks (also on the left fifth) and the digits 1-2 do not move the slide (${before} -> ${await state(page)})`);
+    await page.waitForTimeout(150);
+    const ink = () => page.evaluate(() => { const c = document.querySelector('.dk-ann'); if (!c || c.style.display === 'none') return 0; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+    A.need(await ink() > 500, 'the stroke is on the canvas');
+    A.need(await page.evaluate(() => { const c = document.querySelector('.dk-ann'), z = e => +getComputedStyle(e).zIndex; return z(c) > z(document.querySelector('.dk-veil')) && z(c) < z(document.querySelector('.dk-blackout')) && z(document.querySelector('.dk-ui')) > z(document.querySelector('.dk-ann-cap')); }), 'the canvas is above the slide and under the black screen; the control bar is above the pointer pad');
+    await page.keyboard.press('Escape');
+    A.need(!(await page.evaluate(() => document.documentElement.classList.contains('dk-annotating'))), 'Esc leaves the mode');
+    A.need((await settle(page)).idle, 'idle rendering is intact after drawing (?perf: idle, drawn 0/s)');
+    await page.keyboard.press('ArrowRight'); await page.waitForTimeout(1600);
+    A.need(await ink() === 0, 'the marks belong to their slide: none on the next one');
+    await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(1600);
+    A.need(await ink() > 500, 'the marks are back after coming back to the slide');
+    await page.keyboard.press('e'); await page.waitForTimeout(150);
+    A.need(await ink() === 0, 'E erases the marks of the slide');
+    await page.keyboard.press('h'); await page.keyboard.press('l'); await page.mouse.move(400, 300); await page.mouse.move(430, 320);
+    A.need(await page.evaluate(() => document.querySelector('.dk-ann-laser').classList.contains('is-on')), 'L shows the laser dot at the pointer');
+    A.need(await state(page) === before, 'H and L modes do not move the slide either');
+    await page.keyboard.press('Escape');
+    await page.mouse.click(700, 400); await page.waitForTimeout(100);
+    A.need(await state(page) !== before, 'after Esc a click advances again');
+    A.need(!page.errors.length, `no page errors (${page.errors[0] || ''})`);
+    await ctx.close();
+    // touch: a swipe in draw mode draws, it does not turn the page
+    const tctx = await actx({ hasTouch: true }), tp = await open(tctx, url(tpl));
+    const cdp = await tctx.newCDPSession(tp), pt = (x, y) => [{ x, y, id: 1 }];
+    await tp.keyboard.press('d');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(200, 300) });
+    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(200 + i * 60, 300 + i * 4) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await tp.waitForTimeout(200);
+    A.need(await state(tp) === '0.0', 'touch: a horizontal swipe in draw mode does not change the slide');
+    A.need(await tp.evaluate(() => { const c = document.querySelector('.dk-ann'); return !!c && c.style.display !== 'none'; }), 'touch: the swipe left a mark');
+    await tctx.close();
+    // kiosk switch
+    const off = path.join(os.tmpdir(), `deck-kit-annotate-off-${process.pid}.html`);
+    fs.writeFileSync(off, read('template/deck.html').replace('<div class="deck"', '<div class="deck" data-annotate="off"'));
+    const kctx = await actx(), kp = await open(kctx, url(off));
+    await kp.keyboard.press('d'); await kp.keyboard.press('l');
+    A.need(await kp.evaluate(q => document.querySelectorAll(q).length === 0 && !document.documentElement.classList.contains('dk-annotating') && !document.querySelector('[data-act=annotate]'), layers), 'data-annotate="off": no mode, no layers, no bar button');
+    await kp.keyboard.press('h');
+    A.need(await kp.evaluate(() => document.querySelector('.dk-help')?.classList.contains('is-on')), 'data-annotate="off": H still opens the help');
+    await kctx.close(); fs.rmSync(off, { force: true });
+    // exports: render mode, the print layout and the "next" preview never have the layer
+    const msg = { dk: 1, a: 's', id: 'x', key: '0.0', k: 'p', c: '#f00', w: 6, p: [1, 1, 400, 400] };
+    const rctx = await actx(), rp = await open(rctx, url(tpl, '?render'));
+    await rp.keyboard.press('d'); await rp.keyboard.press('l'); await rp.mouse.move(300, 300); await rp.mouse.down(); await rp.mouse.move(500, 400); await rp.mouse.up();
+    A.need(await rp.evaluate(q => document.querySelectorAll(q).length === 0 && !document.documentElement.classList.contains('dk-annotating'), layers), '?render: keys and pointer create no annotation layer');
+    A.need(await rp.evaluate(q => { window.__deck.buildPrint(window.__deck.states()); return document.querySelectorAll(q).length; }, layers) === 0, 'the print layout (PDF) has no annotation layer');
+    await rp.evaluate(m => window.postMessage(m, '*'), msg); await rp.waitForTimeout(150);
+    A.need(await rp.evaluate(q => document.querySelectorAll(q).length, layers) === 0, '?render ignores annotation messages from another window');
+    await rctx.close();
+    const ectx = await actx(), ep = await open(ectx, url(tpl, '?embed&rest'));
+    await ep.evaluate(m => window.postMessage(m, '*'), msg); await ep.waitForTimeout(150);
+    A.need(await ep.evaluate(q => document.querySelectorAll(q).length, layers) === 0, '?embed&rest (the next-slide preview) never shows marks');
+    await ectx.close();
+  } catch (e) { A.need(false, `the annotation check itself crashed: ${e.stack || e}`); }
+  await ab.close();
+  console.log(`live annotation\n${A.lines.join('\n') || '  all passed'}\n  ${A.checks} checks, ${A.fails.length} failed\n`);
+  if (A.fails.length) { console.error('\nFAILED:\n - ' + A.fails.join('\n - ')); process.exitCode = 1; }
+}

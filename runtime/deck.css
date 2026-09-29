@@ -122,6 +122,36 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px sol
 .dk-overview .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) { .dk-ui, .dk-hint, .dk-toast, .dk-edge { transition: none; } }
 
+/* live annotation (D H L E): created on first use, live and presenter windows only, never in an export. Theme: --dk-pen-1..4, --dk-laser.
+   The canvas sits above the slide and its chrome and under the black screen; the pad that catches the pointer sits under the control bar. */
+.dk-ann { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 65; pointer-events: none; }
+.dk-ann-laser { position: absolute; left: 0; top: 0; width: 44px; height: 44px; z-index: 66; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, #fff 0 10%, var(--dk-laser, #ff2b2b) 24%, transparent 70%); }
+.dk-ann-laser.is-on { opacity: 1; }
+.dk-ann-laser.is-on.is-fade { opacity: 0; transition: opacity .4s linear; }
+.dk-ann-cap { position: fixed; inset: 0; z-index: 75; display: none; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.dk-annotating .dk-ann-cap { display: block; }
+.dk-ann-cap.is-laser { cursor: none; }
+.dk-ann-tools { position: fixed; left: 50%; top: 18px; z-index: 82; transform: translate(-50%, -12px); opacity: 0; pointer-events: none; display: none; align-items: center; gap: 4px;
+  padding: 6px; border-radius: 16px; box-sizing: border-box; max-width: calc(100vw - 32px); transition: opacity .25s, transform .25s;
+  font: 500 14px/1 ui-sans-serif, system-ui, sans-serif; color: var(--dk-ui-fg, #f4f4f4);
+  background: var(--dk-ui-bg, rgba(22,22,24,.88)); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(8px); }
+.dk-annotating .dk-ann-tools { display: flex; }
+.dk-annotating.dk-ui-on .dk-ann-tools { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dk-idle .dk-ann-tools { opacity: 0 !important; pointer-events: none; }
+.dk-ann-tools[data-mode=laser] .dk-sw { display: none; }
+.dk-ann-tools [data-tip]:hover::after { bottom: auto; top: calc(100% + 10px); }
+.dk-b.is-on { background: rgba(255,255,255,.24); }
+.dk-sw { position: relative; flex: none; width: 30px; height: 30px; margin: 5px 3px; padding: 0; border-radius: 50%; cursor: pointer; background: var(--c, #fff);
+  border: 2px solid rgba(255,255,255,.55); box-sizing: border-box; }
+.dk-sw.is-on { border-color: #fff; box-shadow: 0 0 0 3px var(--dk-ui-accent, #ffd23f); }
+.dk-pv-cap { position: absolute; inset: 0; z-index: 2; cursor: none; touch-action: none; }
+.dk-pv-cap[hidden] { display: none; }
+.dk-pv-cap::after { content: 'Laser: move over the slide · L or Esc to stop'; position: absolute; left: 10px; bottom: 8px; padding: 4px 8px; border-radius: 6px;
+  background: rgba(0,0,0,.6); color: #fff; font: 500 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.dk-overview .dk-ann, .dk-overview .dk-ann-laser { display: none; }
+@media print { .dk-ann-cap, .dk-ann-tools { display: none !important; } }
+
 /* presenter view */
 body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
 .dk-presenter .deck { display: none; }

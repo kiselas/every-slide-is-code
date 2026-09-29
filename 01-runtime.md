@@ -55,6 +55,7 @@ The canvas is 1920×1080 CSS pixels (`data-w`/`data-h` on `.deck` to change it) 
 | `data-transition-dur`, `data-dir`, `data-origin`, `data-color`, `data-lift` | default transition options |
 | `data-chrome="progress,number"` | a progress bar and a slide counter drawn inside the slide (they appear in exports) |
 | `data-controls="off"` | no on-screen controls (kiosk, embedded deck); keys still work |
+| `data-annotate="off"` | no live annotation (pen, highlighter, laser; 11-presenting.md): no keys, no bar button, no layer. Use it for kiosks and embeds |
 | `data-hold="3"` | seconds per step in the video timeline |
 | `data-dim=".28"` | opacity of dimmed builds |
 | `data-fps="30"` | frame rate reported to the video exporter |
@@ -220,7 +221,9 @@ For something the helpers do not cover (a sankey, a map projection, force layout
 | `?perf` | live, with a frame-rate HUD (13-performance.md) |
 | `?nograin` | `fx.grain` draws nothing (a deck with no other ambient motion then goes fully idle) |
 
-Keys: → ↓ Space PgDn next · ← ↑ PgUp previous · Home/End · digits + Enter go to slide · **O** or **Esc** overview · **P** presenter · **F** fullscreen · **B** or **.** black screen · **?** help.
+Keys: → ↓ Space PgDn next · ← ↑ PgUp previous · Home/End · digits + Enter go to slide · **O** or **Esc** overview · **P** presenter · **F** fullscreen · **B** or **.** black screen · **?** help · **D** pen · **H** highlighter · **L** laser pointer · **E** erase this slide's marks · **1**–**4** pen colour while drawing (**Esc** leaves the drawing mode first). **H** used to open the help; it now draws (it still opens the help with `data-annotate="off"`).
+
+Live annotation is drawn on a canvas that the runtime creates on first use, above the slide and below the control bar. It exists only in the live and presenter windows, never in `?render`, so no export can contain it. Pen colours come from the CSS variables `--dk-pen-1` … `--dk-pen-4` (defaults: `--accent`, `--ink`, yellow, white) and the laser from `--dk-laser`. Details and the presenter-view mirroring: 11-presenting.md.
 
 Mouse and touch: a click on the right four-fifths of the screen goes forward, on the left fifth back (an arrow appears near the edge); swipe left/right. Moving the mouse shows the control bar: back/next, slide number and title, one dot per step, a scrubber with every slide (hover for its title, click to jump), overview, presenter view, fullscreen and help. It hides after 2.6 s without movement. A hint with the main keys shows for the first seconds; reaching either end of the deck shows a short message. `Deck.toast('text')` shows your own.
 
@@ -248,3 +251,9 @@ window.__ready = true;                      // after fonts and images
 - **IDs inside SVG** (`clipPath`, gradients) must be unique per deck; the PDF export renames them per page.
 - **Canvas inside a slide** is fine; a WebGL canvas needs `preserveDrawingBuffer: true` to appear in the PDF.
 - **Heavy SVG filters** on large areas cost frames in live mode. Test on the presentation laptop.
+
+## data-fit
+
+`data-fit` shrinks the element's font in 3% steps (at least 1 px) until the text fits, measuring the DOM after every step: `scrollWidth`/`clientWidth` for one unbreakable word that is too wide, and `offsetHeight` against the line height (`data-fit="2"`: at most two lines) or `scrollHeight` against the box. It runs once, after fonts load, before builds are parsed, so it costs nothing per frame.
+
+**Decision: stays on DOM measurement; Pretext ([chenglou/pretext](https://github.com/chenglou/pretext), DOM-free text measurement) is not adopted.** Prototype and measurement (Chrome, the four decks in this repo: 4 + 11 + 8 + 6 `data-fit` elements, each fitted at 5 widths from 100% down to 40% so the loop really shrinks, 145 fits, 120 of them plain text): the chosen font size matched the DOM path within 1 px in 120 of 120 cases with fallback fonts and in 119 of 120 with the web fonts (one case off by 2.2 px, one step of the 3% loop). Time for the whole sweep: DOM 494 ms, Pretext 440 ms cold (first `prepare` per font size and text) and 104 ms warm, with fallback fonts; with web fonts DOM 321 ms and Pretext 371 ms cold. So it is not measurably faster on the first (and only) run that a deck makes, and in real use most titles fit at once: the DOM path was 1 ms for the whole template deck. It also loses on the things a deck needs: it measures plain text only (a `data-say` statement or a title with `<em>`/`<br>` matched in 19 of 25 cases), ignores `font-feature-settings` and `font-optical-sizing`, and ships as seven ES modules (126 KB unminified, no single-file build), which cannot be pasted into the classic inline runtime or loaded from `file://` without a bundler, and would be a CDN dependency for the offline path. Revisit it if a deck ever needs to measure text thousands of times (a live-resizing text box), not for `data-fit`.

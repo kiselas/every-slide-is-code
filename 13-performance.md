@@ -68,3 +68,14 @@ What changed in the exporter, on the demo deck, seconds 0 to 10 at 1080p (best o
 - **The GIF encoder** stays single-pass per chunk, so each chunk starts with a full frame and a parallel GIF is a few KB larger per chunk than a serial one would be. Its palette is built from at most about 120,000 changed pixels (an even stride), which keeps a full-frame change cheap.
 
 To keep a deck cheap to render: every rule above (no layout reads in `frame`, small filters, few nodes) applies, because `__draw(T)` runs once per output frame in every worker.
+
+
+## Live annotation costs nothing when unused
+
+The pen, highlighter and laser (11-presenting.md) are built to leave the rules above intact:
+
+- **Lazy.** Until the first key press there is no canvas, no pointer pad, no listener and no timer. `?render` and every export never create it.
+- **No frame loop.** A stroke is redrawn on the browser frame after a pointer move, from the vector points of the current slide and step (one canvas, cleared and stroked again; a few hundred points per stroke are cheap). Between strokes nothing runs, so a still slide stays "idle" in `?perf` with marks on it, and `check`/`perf` are not affected.
+- **An empty canvas is not composited**: it is `display: none` on slides without marks, and hidden during transitions and in the overview.
+- **The laser is one absolutely positioned element** moved with a transform (rounded to 0.01 px) on pointer moves; its fade is one CSS opacity transition on that dot, started by a single timer 1.1 s after the pointer stops.
+- **Mirroring to presenter view** sends the new points of a stroke at most once per frame (`postMessage`, plain numbers), and the laser position once per frame. Presenter view already runs the deck twice: the second copy only strokes what it receives.

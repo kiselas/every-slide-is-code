@@ -14,8 +14,11 @@ Open the HTML file in Chrome, Edge or Firefox. It scales to any screen and lette
 | P | presenter view in a new window |
 | F | fullscreen |
 | B or . | black screen, press again to return |
-| ? | key help |
-| Esc | closes help or black screen; otherwise opens the overview |
+| ? | key help (`H` is the highlighter now; `H` opens the help only when annotation is off) |
+| D / H / L | pen / highlighter / laser pointer (below) |
+| E | erase the marks of the current slide |
+| 1–4 | pen colour while a drawing mode is on (otherwise digits go to a slide number) |
+| Esc | leaves a drawing mode; otherwise closes help or black screen; otherwise opens the overview |
 
 **With the mouse**, move it and the control bar appears at the bottom: back and next buttons, the slide number and title, dots for the steps of the slide (filled up to the current one), a scrubber with one segment per slide (hover shows the title, click jumps), and buttons for the overview, presenter view, fullscreen and help. It hides after a few seconds of stillness, so it never sits on the projected slide. Clicking the slide itself goes forward; clicking its left fifth goes back, and an arrow at the edge shows which way a click will go.
 
@@ -31,6 +34,35 @@ Presentation clickers send PgUp/PgDn or arrows, so they work as they are. Links,
 
 Notes come from `<aside class="notes">` inside each slide and can hold HTML: paragraphs, a bold number, a list of beats.
 
+## Drawing on the slides
+
+For the moment in a talk where you want to circle a number, underline a word or just point.
+
+| Key | Mode |
+|---|---|
+| **D** | pen. Press again (or **Esc**) to stop |
+| **H** | highlighter: a wide translucent stroke |
+| **L** | laser pointer: a soft red dot that follows the pointer and fades 1.5 s after it stops |
+| **1**–**4** | colour of the pen or highlighter. Each one reads a CSS variable, see below |
+| **E** | erases the marks of the current slide (all its steps), with or without a mode on |
+| **Esc** | leaves the mode |
+
+A drawing mode catches the pointer, so **clicks and swipes do not advance the slide** while it is on (arrows, PgDn and the clicker still do). Marks belong to the slide and step they were drawn on, stay when you go away and come back during the session, and are gone after a reload. They sit on a canvas above the slide and below the control bar and the black screen. On a tablet, or without a keyboard, use the pen button in the control bar: it opens a palette with the three tools, the four colours, erase and done.
+
+**Presenter view.** What you draw in the audience window appears in the presenter's preview of the current slide, live (a presenter view opened later gets everything drawn so far). The other way, only the laser is supported: press **L** in the presenter window and move the pointer over the current-slide preview; the dot shows in the audience window (and in the preview). Pen and highlighter work in the audience window only.
+
+**Never in exports.** The layer is created on first use and only in the live and presenter windows: `?render`, the PDF, PPTX, PNG, GIF and MP4 exports, the "next" preview and the print layout cannot contain a mark. Nothing exists (no element, listener or timer) until you press a key, and a slide that is idle stays idle (`?perf` still says "idle" after you draw).
+
+Theme it from the deck's own CSS:
+
+```css
+.deck { --dk-pen-1: #e5322d; --dk-pen-2: #16161a; --dk-pen-3: #ffd23f; --dk-pen-4: #fff; --dk-laser: #ff2b2b; }
+```
+
+Without them: colour 1 is `--accent`, 2 is `--ink`, 3 is yellow, 4 is white (so there is always a colour that reads on a dark and on a light slide). The pen starts on colour 1, the highlighter on colour 3.
+
+Turn it off for a kiosk or an embedded deck with `<div class="deck" data-annotate="off">`: no keys, no bar button, no layer, and **H** opens the help again. Annotation ignores pen pressure and works with touch and stylus (pointer events).
+
 ## Before the talk
 
 - Run it on the presentation machine and screen. Check that fonts loaded (the deck waits for them; if it is offline, bundle first).
@@ -44,6 +76,7 @@ Notes come from `<aside class="notes">` inside each slide and can hold HTML: par
 
 - Projectors lower contrast and saturation. Thin grey lines and light-grey text may vanish; the `muted` and `rule` colours need to survive that.
 - Big rooms: the back row sees your 24 px as 12 px on a laptop. When in doubt, go bigger and say less.
+- Use **L** to point and **D** to circle, instead of waving at the screen; **E** wipes the slide before you move on if you want it clean when you come back.
 - Use **B** during a discussion so the room looks at people, not at the slide.
 - Jump with digits + Enter during Q&A instead of clicking through; keep an appendix after the close for expected questions.
 

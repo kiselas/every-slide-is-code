@@ -132,6 +132,36 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 .35em; border: 1px sol
 .dk-overview .dk-ui { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) { .dk-ui, .dk-hint, .dk-toast, .dk-edge { transition: none; } }
 
+/* live annotation (D H L E): created on first use, live and presenter windows only, never in an export. Theme: --dk-pen-1..4, --dk-laser.
+   The canvas sits above the slide and its chrome and under the black screen; the pad that catches the pointer sits under the control bar. */
+.dk-ann { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 65; pointer-events: none; }
+.dk-ann-laser { position: absolute; left: 0; top: 0; width: 44px; height: 44px; z-index: 66; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, #fff 0 10%, var(--dk-laser, #ff2b2b) 24%, transparent 70%); }
+.dk-ann-laser.is-on { opacity: 1; }
+.dk-ann-laser.is-on.is-fade { opacity: 0; transition: opacity .4s linear; }
+.dk-ann-cap { position: fixed; inset: 0; z-index: 75; display: none; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.dk-annotating .dk-ann-cap { display: block; }
+.dk-ann-cap.is-laser { cursor: none; }
+.dk-ann-tools { position: fixed; left: 50%; top: 18px; z-index: 82; transform: translate(-50%, -12px); opacity: 0; pointer-events: none; display: none; align-items: center; gap: 4px;
+  padding: 6px; border-radius: 16px; box-sizing: border-box; max-width: calc(100vw - 32px); transition: opacity .25s, transform .25s;
+  font: 500 14px/1 ui-sans-serif, system-ui, sans-serif; color: var(--dk-ui-fg, #f4f4f4);
+  background: var(--dk-ui-bg, rgba(22,22,24,.88)); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(8px); }
+.dk-annotating .dk-ann-tools { display: flex; }
+.dk-annotating.dk-ui-on .dk-ann-tools { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dk-idle .dk-ann-tools { opacity: 0 !important; pointer-events: none; }
+.dk-ann-tools[data-mode=laser] .dk-sw { display: none; }
+.dk-ann-tools [data-tip]:hover::after { bottom: auto; top: calc(100% + 10px); }
+.dk-b.is-on { background: rgba(255,255,255,.24); }
+.dk-sw { position: relative; flex: none; width: 30px; height: 30px; margin: 5px 3px; padding: 0; border-radius: 50%; cursor: pointer; background: var(--c, #fff);
+  border: 2px solid rgba(255,255,255,.55); box-sizing: border-box; }
+.dk-sw.is-on { border-color: #fff; box-shadow: 0 0 0 3px var(--dk-ui-accent, #ffd23f); }
+.dk-pv-cap { position: absolute; inset: 0; z-index: 2; cursor: none; touch-action: none; }
+.dk-pv-cap[hidden] { display: none; }
+.dk-pv-cap::after { content: 'Laser: move over the slide · L or Esc to stop'; position: absolute; left: 10px; bottom: 8px; padding: 4px 8px; border-radius: 6px;
+  background: rgba(0,0,0,.6); color: #fff; font: 500 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.dk-overview .dk-ann, .dk-overview .dk-ann-laser { display: none; }
+@media print { .dk-ann-cap, .dk-ann-tools { display: none !important; } }
+
 /* presenter view */
 body.dk-presenter { background: #111; color: #eee; overflow: hidden; }
 .dk-presenter .deck { display: none; }
@@ -318,6 +348,8 @@ const reduced = MODE === 'live' && matchMedia('(prefers-reduced-motion: reduce)'
 const DIM = +(deckEl.dataset.dim || .28);
 const html = document.documentElement;
 html.classList.add('dk-mode-' + MODE);
+// Live annotation (D, H, L, E): off for exports, for the "next" preview and for kiosks (data-annotate="off").
+const ANN_ON = deckEl.dataset.annotate !== 'off' && MODE !== 'render' && !(MODE === 'embed' && Q.has('rest'));
 deckEl.style.width = W + 'px';
 deckEl.style.height = H + 'px';
 const CLOCK0 = performance.now();
@@ -1342,7 +1374,7 @@ const perf = { rendered: 0, skipped: 0, ms: 0, worst: 0 };
 function frame(T) {
   if (S.tr) {
     const p = (T - S.tr.start) / Math.max(1e-6, S.tr.dur);
-    if (p >= 1) { endTransition(S.tr); S.tr = null; S.dirty = true; }
+    if (p >= 1) { endTransition(S.tr); S.tr = null; S.dirty = true; annRefresh(); }
     else {
       const o = renderTransition(S.tr, p, T);
       drawStage({ T, rest: false, i: lerp(S.tr.A.i, S.tr.B.i, ease.inOutCubic(p)), p, from: S.tr.A.i, to: S.tr.B.i,
@@ -1384,7 +1416,7 @@ function changed(action) {
     if (location.hash !== h) history.replaceState(null, '', h);
   }
   for (const f of listeners) f({ i: S.i, step: S.step, action });
-  hideHint(); uiUpdate();
+  hideHint(); uiUpdate(); annRefresh();
 }
 function finishTr() { if (S.tr) { endTransition(S.tr); S.tr = null; } }
 function toSlide(i, step, sign, settled) {
@@ -1447,6 +1479,7 @@ function fit() {
   fitK = Math.min(vw / W, vh / H);
   deckEl.style.transform = `translate(${(vw - W * fitK) / 2}px, ${(vh - H * fitK) / 2}px) scale(${fitK})`;
   S.dirty = true;
+  if (ann) annResize();
 }
 
 /* ───────────────────────── overview & help ───────────────────────── */
@@ -1455,6 +1488,7 @@ function toggleOverview(on = !overview) {
   overview = on;
   html.classList.toggle('dk-overview', on);
   if (on) {
+    if (ann && ann.mode) annSet(null);
     finishTr();
     const n = slides.length, cols = Math.ceil(Math.sqrt(n * 1.25)), rows = Math.ceil(n / cols), g = 28;
     const cap = 15 / fitKLive(), gy = g + cap * 1.9, top = 44 / fitKLive();   // caption height and a hint row, in canvas px
@@ -1478,7 +1512,7 @@ function toggleOverview(on = !overview) {
     for (const c of deckEl.querySelectorAll('.dk-ov-cap')) c.remove();
     S.dirty = true; stageKey = '';
   }
-  uiUpdate();
+  uiUpdate(); annRefresh();
 }
 function markOv() { for (const s of slides) s.layer.classList.toggle('dk-ov-sel', s.i === ovSel); }
 function toggleHelp(on) {
@@ -1496,7 +1530,14 @@ function toggleHelp(on) {
         <tr><td><kbd>P</kbd></td><td>presenter view with notes</td></tr>
         <tr><td><kbd>F</kbd></td><td>fullscreen</td></tr>
         <tr><td><kbd>B</kbd> <kbd>.</kbd></td><td>black screen</td></tr>
-        <tr><td><kbd>?</kbd></td><td>this help</td></tr></table></div>
+        <tr><td><kbd>?</kbd></td><td>this help</td></tr></table>
+      ${ANN_ON ? `<table><caption>Annotate</caption>
+        <tr><td><kbd>D</kbd></td><td>pen (draw)</td></tr>
+        <tr><td><kbd>H</kbd></td><td>highlighter</td></tr>
+        <tr><td><kbd>L</kbd></td><td>laser pointer</td></tr>
+        <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>colour (while drawing)</td></tr>
+        <tr><td><kbd>E</kbd></td><td>erase this slide's marks</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>leave the mode</td></tr></table>` : ''}</div>
       <p>Dots under the title show the steps left on this slide. The bar at the bottom jumps to any slide.</p></div>` }, document.body);
     help.addEventListener('click', e => { if (e.target === help) toggleHelp(false); });
   }
@@ -1512,6 +1553,11 @@ const ICON = {
   grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg>',
   pv: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="12" height="9" rx="1"/><path d="M18 7h3M18 11h3M3 18h18"/></svg>',
   fs: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg>',
+  hl: '<svg viewBox="0 0 24 24"><path d="M9 14l6-6 3 3-6 6H9z"/><path d="M4 20h7"/></svg>',
+  laser: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>',
+  bin: '<svg viewBox="0 0 24 24"><path d="M5 8h14M9 8V5h6v3M7 8l1 12h8l1-12"/></svg>',
+  ok: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
 };
 let ui = null, uiT = 0, uiHover = false, hintEl = null, toastEl = null, toastT = 0, uiKey = '';
 function controls() {
@@ -1528,13 +1574,14 @@ function controls() {
       <i class="dk-sep"></i>
       <button class="dk-b" data-act="overview" data-tip="All slides (O)" aria-label="All slides">${ICON.grid}</button>
       <button class="dk-b" data-act="presenter" data-tip="Presenter view (P)" aria-label="Presenter view">${ICON.pv}</button>
+      ${ANN_ON ? `<button class="dk-b" data-act="annotate" data-tip="Draw on the slide (D)" aria-label="Draw on the slide">${ICON.pen}</button>` : ''}
       <button class="dk-b" data-act="fullscreen" data-tip="Fullscreen (F)" aria-label="Fullscreen">${ICON.fs}</button>
       <button class="dk-b" data-act="help" data-tip="Shortcuts (?)" aria-label="Shortcuts">?</button>
     </div>` }, document.body);
   el('div', { class: 'dk-edge dk-edge-l', html: ICON.prev }, document.body);
   el('div', { class: 'dk-edge dk-edge-r', html: ICON.next }, document.body);
   hintEl = el('div', { class: 'dk-hint', html: '<kbd>→</kbd> or click to advance · <kbd>←</kbd> back · <kbd>O</kbd> all slides · <kbd>?</kbd> shortcuts' }, document.body);
-  setTimeout(() => hintEl.classList.add('is-on'), 600);
+  setTimeout(() => hintEl && hintEl.classList.add('is-on'), 600);   // a key pressed in the first 600 ms has already dismissed the hint
   setTimeout(hideHint, 6000);
   ui.addEventListener('mouseenter', () => { uiHover = true; showUI(); });
   ui.addEventListener('mouseleave', () => { uiHover = false; showUI(); });
@@ -1542,7 +1589,7 @@ function controls() {
     e.stopPropagation();
     const b = e.target.closest('[data-act],[data-i]'); if (!b) return;
     if (b.dataset.i != null) { if (overview) toggleOverview(false); goto(+b.dataset.i, 0, { animate: Math.abs(+b.dataset.i - S.i) === 1 }); }
-    else ({ prev, next, help: () => toggleHelp(), overview: () => toggleOverview(), presenter: openPresenter,
+    else ({ prev, next, help: () => toggleHelp(), overview: () => toggleOverview(), presenter: openPresenter, annotate: () => annToggle('pen'),
       fullscreen: () => (document.fullscreenElement ? document.exitFullscreen() : html.requestFullscreen?.()) })[b.dataset.act]();
     broadcast();
   });
@@ -1591,7 +1638,7 @@ function hud() {
 }
 
 /* ───────────────────────── presenter view ───────────────────────── */
-let presenterWin = null;
+let presenterWin = null, pvCur = null;
 function openPresenter() {
   const url = location.href.split('#')[0].split('?')[0] + '?presenter' + location.hash;
   presenterWin = window.open(url, 'dk-presenter', 'width=1400,height=860');
@@ -1618,6 +1665,11 @@ function presenterUI() {
     </main>` }, document.body);
   const [cur, nxt] = ui.querySelectorAll('iframe');
   cur.src = `${base}?embed#${S.i + 1}.${S.step}`;
+  pvCur = cur;
+  if (ANN_ON) {   // the audience window's marks and laser are mirrored into this preview (see live annotation)
+    cur.addEventListener('load', () => { if (marks.size) post(cur.contentWindow, { a: 'snap', marks: [...marks] }); });
+    post(window.opener, { a: 'hello' });
+  }
   const timer = ui.querySelector('.dk-pv-timer'), pos = ui.querySelector('.dk-pv-pos'), clock = ui.querySelector('.dk-pv-clock'), notes = ui.querySelector('.dk-pv-notes');
   let t0 = Date.now();
   timer.onclick = () => { t0 = Date.now(); };
@@ -1646,6 +1698,209 @@ function presenterUI() {
   refresh();
 }
 
+/* ───────────────────────── live annotation ─────────────────────────
+ * Drawing on the slide while you talk: D pen, H highlighter, L laser pointer, E erase this slide's marks, 1-4 colour, Esc leaves.
+ * A mode swallows clicks (they do not advance). Marks are vectors in canvas pixels, kept per slide and step for the session, and
+ * drawn on a canvas above the slide and under the control bar. Live and presenter windows only: ?render, ?embed&rest and the print
+ * layout never create any of it, so exports cannot contain a mark. Lazy: no element, listener or timer exists until the first use,
+ * and nothing runs a frame loop (a stroke redraws on the frame after a pointer move), so idle rendering is untouched.
+ * The audience window mirrors strokes and laser to the presenter's preview; the presenter's laser (L there) shows in the audience window.
+ * Colours: --dk-pen-1..4 (default: --accent, --ink, yellow, white). data-annotate="off" on .deck disables it. Reference: 11-presenting.md */
+const marks = new Map();                            // 'slide.step' -> [{ k: 'p' | 'h', c: colour, w: width, p: [x, y, x, y, ...] }]
+const annRemote = new Map();                        // stroke id -> stroke being received from another window
+const PEN = { p: { w: 6, a: 1, n: 1 }, h: { w: 38, a: .38, n: 3 } };
+let ann = null, annOut = null, annLaserOut = null, annFlushQ = 0, annSeq = 0, pvCap = null;
+const annId = () => `${S.i}.${S.step}`;
+const annPost = m => {
+  if (MODE === 'live') post(presenterWin, m);
+  else if (MODE === 'presenter') { post(window.opener, m); post(pvCur && pvCur.contentWindow, m); }
+};
+function annColor(n) {
+  const cs = getComputedStyle(deckEl), v = x => cs.getPropertyValue(x).trim();
+  return v('--dk-pen-' + n) || [v('--accent'), v('--ink'), '#ffd23f', '#ffffff'][n - 1] || ['#e5322d', '#111111', '#ffd23f', '#ffffff'][n - 1];
+}
+function annInit() {
+  if (ann) return ann;
+  const cv = el('canvas', { class: 'dk-ann' }), laser = el('div', { class: 'dk-ann-laser' });
+  deckEl.insertBefore(cv, blackout); deckEl.insertBefore(laser, blackout);
+  ann = { cv, g: cv.getContext('2d'), laser, q: 0, raf: 0, mode: null, down: false, ci: { p: 1, h: 3 }, lt: 0 };
+  if (MODE === 'live') {
+    const cap = ann.cap = el('div', { class: 'dk-ann-cap' }, document.body);
+    let pid = null, cur = null;
+    const at = e => [+((e.clientX - (innerWidth - W * fitK) / 2) / fitK).toFixed(1), +((e.clientY - (innerHeight - H * fitK) / 2) / fitK).toFixed(1)];
+    const end = () => {
+      if (!cur) return;
+      annOut.z = 1; annFlushNow(); cur = null; pid = null; annOut = null; ann.down = false;
+    };
+    cap.addEventListener('pointerdown', e => {
+      if (!e.isPrimary || e.button > 0 || !ann.mode) return;
+      e.preventDefault(); cap.setPointerCapture(e.pointerId);
+      const [x, y] = at(e);
+      if (ann.mode === 'laser') return annLaserAt(x, y);
+      const k = ann.mode === 'pen' ? 'p' : 'h', key = annId(), list = marks.get(key) || [];
+      cur = { k, c: annColor(ann.ci[k]), w: PEN[k].w, p: [x, y] };
+      marks.set(key, list); list.push(cur);
+      annOut = { key, id: MODE + ++annSeq, k, c: cur.c, w: cur.w, p: [x, y] };
+      pid = e.pointerId; ann.down = true; annSched(); annFlushSoon();
+    });
+    cap.addEventListener('pointermove', e => {
+      if (!ann.mode) return;
+      if (ann.mode === 'laser') { const [x, y] = at(e); return annLaserAt(x, y); }
+      if (!cur || e.pointerId !== pid) return;
+      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      for (const ev of evs.length ? evs : [e]) {
+        const [x, y] = at(ev), n = cur.p.length;
+        if (Math.hypot(x - cur.p[n - 2], y - cur.p[n - 1]) < 1.5) continue;   // no dust: the path stays light
+        cur.p.push(x, y); annOut.p.push(x, y);
+      }
+      annSched(); annFlushSoon();
+    });
+    for (const t of ['pointerup', 'pointercancel']) cap.addEventListener(t, e => { if (e.pointerId === pid) end(); });
+    ann.end = end;
+  }
+  annResize();
+  return ann;
+}
+function annResize() {
+  const q = Math.min(2, (devicePixelRatio || 1) * fitK), w = Math.round(W * q), h = Math.round(H * q);
+  if (ann.cv.width !== w || ann.cv.height !== h) { ann.cv.width = w; ann.cv.height = h; ann.q = q; annSched(); }
+}
+function annSched() { if (ann && !ann.raf) ann.raf = requestAnimationFrame(annDraw); }
+function annPath(g, p) {                            // a smooth line through the points: quadratic curves between midpoints
+  const n = p.length / 2;
+  g.beginPath(); g.moveTo(p[0], p[1]);
+  if (n < 2) { g.lineTo(p[0] + .01, p[1]); return; }
+  for (let i = 1; i < n - 1; i++) g.quadraticCurveTo(p[i * 2], p[i * 2 + 1], (p[i * 2] + p[i * 2 + 2]) / 2, (p[i * 2 + 1] + p[i * 2 + 3]) / 2);
+  g.lineTo(p[n * 2 - 2], p[n * 2 - 1]);
+}
+function annDraw() {
+  ann.raf = 0;
+  const g = ann.g, list = marks.get(annId()) || [];
+  g.setTransform(ann.q, 0, 0, ann.q, 0, 0); g.clearRect(0, 0, W, H);
+  g.lineCap = g.lineJoin = 'round';
+  for (const s of list) { g.globalAlpha = PEN[s.k].a; g.strokeStyle = s.c; g.lineWidth = s.w; annPath(g, s.p); g.stroke(); }
+  ann.cv.style.display = list.length ? '' : 'none';   // an empty canvas is not composited at all
+}
+// Follows navigation, the end of a transition and the overview: the layer belongs to the slide and step on screen.
+function annRefresh() {
+  if (!ann) return;
+  const hide = !!S.tr || overview;
+  ann.cv.style.visibility = ann.laser.style.visibility = hide ? 'hidden' : '';
+  if (!hide) annSched();
+}
+function annLaserAt(x, y) {                         // the dot, then the message to the other window (one per frame)
+  annLaserShow(x, y);
+  annLaserOut = [x, y]; annFlushSoon();
+}
+function annLaserShow(x, y) {
+  const L = ann.laser, r = 22;
+  L.style.transform = `translate(${Math.round((x - r) * 100) / 100}px, ${Math.round((y - r) * 100) / 100}px)`;
+  L.classList.add('is-on'); L.classList.remove('is-fade');
+  clearTimeout(ann.lt);
+  ann.lt = setTimeout(() => L.classList.add('is-fade'), 1100);   // gone 1.5 s after the pointer stopped (a .4 s fade)
+}
+function annFlushSoon() { if (!annFlushQ) annFlushQ = requestAnimationFrame(annFlushNow); }
+function annFlushNow() {
+  annFlushQ = 0;
+  if (annOut && (annOut.p.length || annOut.z)) { annPost({ a: 's', ...annOut }); annOut.p = []; }
+  if (annLaserOut) { annPost({ a: 'l', x: annLaserOut[0], y: annLaserOut[1] }); annLaserOut = null; }
+}
+function annEraseSlide(i) { let n = 0; for (const k of [...marks.keys()]) if (k.startsWith(i + '.')) { marks.delete(k); n++; } return n; }
+function annSet(mode) {
+  if (mode && !ann) annInit();
+  if (!ann || !ann.cap) return;
+  if (ann.mode === 'laser' || !mode) { clearTimeout(ann.lt); ann.laser.classList.remove('is-on', 'is-fade'); annPost({ a: 'l', x: null }); }
+  ann.end && ann.end();
+  ann.mode = mode;
+  html.classList.toggle('dk-annotating', !!mode);
+  ann.cap.className = 'dk-ann-cap' + (mode ? ' is-' + mode : '');
+  annTools();
+  if (mode) { hideHint(); toast({ pen: 'Pen', hl: 'Highlighter', laser: 'Laser pointer' }[mode] + ' · Esc to stop' + (mode === 'laser' ? '' : ' · 1–4 colour'), 1800); showUI(3200); }
+}
+const annToggle = mode => annSet(ann && ann.mode === mode ? null : mode);
+function annTools() {                               // the palette for touch and mouse: the same actions as the keys
+  if (!ann.tools) {
+    const sw = [1, 2, 3, 4].map(n => `<button class="dk-sw" data-ann="c${n}" data-tip="Colour ${n}" aria-label="Colour ${n}"></button>`).join('');
+    ann.tools = el('div', { class: 'dk-ann-tools', html: `
+      <button class="dk-b" data-ann="pen" data-tip="Pen (D)" aria-label="Pen">${ICON.pen}</button>
+      <button class="dk-b" data-ann="hl" data-tip="Highlighter (H)" aria-label="Highlighter">${ICON.hl}</button>
+      <button class="dk-b" data-ann="laser" data-tip="Laser pointer (L)" aria-label="Laser pointer">${ICON.laser}</button>
+      <i class="dk-sep"></i>${sw}<i class="dk-sep"></i>
+      <button class="dk-b" data-ann="erase" data-tip="Erase this slide (E)" aria-label="Erase this slide">${ICON.bin}</button>
+      <button class="dk-b" data-ann="off" data-tip="Done (Esc)" aria-label="Done">${ICON.ok}</button>` }, document.body);
+    ann.tools.addEventListener('click', e => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-ann]'); if (!b) return;
+      const a = b.dataset.ann; b.blur();
+      if (a === 'pen' || a === 'hl' || a === 'laser') annSet(a);
+      else if (a === 'erase') annErase();
+      else if (a === 'off') annSet(null);
+      else { ann.ci[ann.mode === 'hl' ? 'h' : 'p'] = +a[1]; annTools(); }
+    });
+  }
+  const t = ann.tools, k = ann.mode === 'hl' ? 'h' : 'p';
+  t.dataset.mode = ann.mode || '';
+  for (const b of t.querySelectorAll('[data-ann]')) {
+    const a = b.dataset.ann;
+    b.classList.toggle('is-on', a === ann.mode || (a[0] === 'c' && +a[1] === ann.ci[k]));
+    if (a[0] === 'c' && a.length === 2) b.style.setProperty('--c', annColor(+a[1]));
+  }
+}
+function annErase() {
+  const had = annEraseSlide(S.i);
+  annPost({ a: 'e', i: S.i });
+  if (ann) annSched();
+  toast(had ? 'Marks cleared' : 'Nothing to erase on this slide', 1200);
+}
+function annOnKey(e) {
+  if (!ANN_ON) return false;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (MODE === 'presenter') {                        // the presenter's laser: drawn over the current-slide preview, shown in the audience window
+    if (k === 'l') { pvLaser(!pvCap || !pvCap.isConnected || pvCap.hidden); return true; }
+    if (k === 'Escape' && pvCap && !pvCap.hidden) { pvLaser(false); return true; }
+    return false;
+  }
+  if (MODE !== 'live') return false;
+  if (k === 'Escape') { if (ann && ann.mode && !(help && help.classList.contains('is-on'))) { annSet(null); return true; } return false; }
+  if (k === 'd') annToggle('pen');
+  else if (k === 'h') annToggle('hl');
+  else if (k === 'l') annToggle('laser');
+  else if (k === 'e') annErase();
+  else if (ann && ann.mode && ann.mode !== 'laser' && /^[1-4]$/.test(k)) { ann.ci[ann.mode === 'hl' ? 'h' : 'p'] = +k; annTools(); }
+  else return false;
+  return true;
+}
+// Messages from the other window: 's' stroke (points appended), 'e' erase a slide, 'l' laser, 'snap' everything, 'hello' (the presenter asks for a snapshot).
+function annRecv(m, src) {
+  if (!ANN_ON) return;
+  if (m.a === 'hello') { if (MODE === 'live') post(src, { a: 'snap', marks: [...marks] }); return; }
+  if (m.a === 'snap') { marks.clear(); annRemote.clear(); for (const [k, v] of m.marks) marks.set(k, v); }
+  else if (m.a === 's') {
+    let s = annRemote.get(m.id);
+    if (!s) { s = { k: m.k, c: m.c, w: m.w, p: [] }; annRemote.set(m.id, s); const l = marks.get(m.key) || []; marks.set(m.key, l); l.push(s); }
+    for (const v of m.p) s.p.push(v);
+    if (m.z) annRemote.delete(m.id);
+  } else if (m.a === 'e') annEraseSlide(m.i);
+  if (MODE === 'presenter') { post(pvCur && pvCur.contentWindow, m); return; }   // the presenter has no overlay of its own: it relays to its preview
+  annInit();
+  if (m.a === 'l') { if (m.x == null) { clearTimeout(ann.lt); ann.laser.classList.remove('is-on', 'is-fade'); } else annLaserShow(m.x, m.y); }
+  else annSched();
+}
+// Presenter window: L puts a transparent pad over the current-slide preview; the pointer over it is the laser in the audience window.
+function pvLaser(on) {
+  if (!pvCap) {
+    const fr = document.querySelector('.dk-pv-cur .dk-pv-frame');
+    pvCap = el('div', { class: 'dk-pv-cap' }, fr);
+    pvCap.addEventListener('pointermove', e => {
+      const r = pvCap.getBoundingClientRect();
+      annLaserOut = [+((e.clientX - r.left) / r.width * W).toFixed(1), +((e.clientY - r.top) / r.height * H).toFixed(1)]; annFlushSoon();
+    });
+    pvCap.addEventListener('pointerleave', () => annPost({ a: 'l', x: null }));
+  }
+  pvCap.hidden = !on;
+  if (!on) annPost({ a: 'l', x: null });
+}
+
 /* ───────────────────────── input ───────────────────────── */
 function input() {
   let buf = '', bufT = 0;
@@ -1653,6 +1908,7 @@ function input() {
     if (e.target.closest && e.target.closest('input,textarea,select,[contenteditable]')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key;
+    if (!overview && annOnKey(e)) { e.preventDefault(); return; }
     if (/^\d$/.test(k)) { buf += k; toast(`Go to slide ${buf} · Enter`, 2500); clearTimeout(bufT); bufT = setTimeout(() => { buf = ''; }, 2500); return; }
     if (k === 'Enter' && buf) { if (overview) toggleOverview(false); goto(+buf - 1); toast('', 1); buf = ''; e.preventDefault(); broadcast(); return; }
     buf = '';
@@ -1674,7 +1930,8 @@ function input() {
       case 'p': case 'P': if (MODE === 'live') openPresenter(); break;
       case 'f': case 'F': document.fullscreenElement ? document.exitFullscreen() : html.requestFullscreen?.(); break;
       case 'b': case 'B': case '.': blackout.classList.toggle('is-on'); break;
-      case '?': case 'h': case 'H': toggleHelp(); break;
+      case '?': toggleHelp(); break;
+      case 'h': case 'H': if (ANN_ON) return; toggleHelp(); break;   // H is the highlighter unless annotation is off
       case 'Escape':
         if (help && help.classList.contains('is-on')) toggleHelp(false);
         else if (blackout.classList.contains('is-on')) blackout.classList.remove('is-on');
@@ -1691,7 +1948,7 @@ function input() {
   const EDGE = .2;
   addEventListener('click', e => {
     if (Date.now() - swiped < 500) return;
-    if (e.target.closest('.dk-ui,.dk-help,.dk-toast')) return;
+    if (e.target.closest('.dk-ui,.dk-help,.dk-toast,.dk-ann-cap,.dk-ann-tools')) return;   // a click never advances while a mode is on
     if (overview) {
       const layer = e.target.closest('.dk-layer'); if (!layer) return;
       const s = slides.find(x => x.layer === layer); toggleOverview(false); goto(s.i); broadcast(); return;
@@ -1702,22 +1959,23 @@ function input() {
   let tx = null, ty = null;
   addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; showUI(); }, { passive: true });
   addEventListener('touchend', e => {
-    if (tx == null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
+    if (tx == null || (ann && ann.mode)) { tx = null; return; } const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { swiped = Date.now(); dx < 0 ? next() : prev(); broadcast(); }
   });
   let idle;
   addEventListener('mousemove', e => {
     html.classList.remove('dk-idle'); clearTimeout(idle); idle = setTimeout(() => html.classList.add('dk-idle'), 2600);
-    showUI();
-    const x = e.clientX / innerWidth, inUI = !!e.target.closest?.('.dk-ui');
-    html.classList.toggle('dk-edge-l-on', !overview && !inUI && x < EDGE);
-    html.classList.toggle('dk-edge-r-on', !overview && !inUI && x > 1 - EDGE);
+    if (!(ann && ann.down)) showUI();               // the bar stays away while a stroke is being drawn
+    const x = e.clientX / innerWidth, inUI = !!e.target.closest?.('.dk-ui'), off = overview || inUI || (ann && ann.mode);
+    html.classList.toggle('dk-edge-l-on', !off && x < EDGE);
+    html.classList.toggle('dk-edge-r-on', !off && x > 1 - EDGE);
   });
   document.addEventListener('mouseleave', () => html.classList.remove('dk-edge-l-on', 'dk-edge-r-on'));
   addEventListener('hashchange', () => { const h = parseHash(); if (h && (h.i !== S.i || h.step !== S.step)) { goto(h.i, h.step); broadcast(); } });
 }
 addEventListener('message', e => {
   const m = e.data; if (!m || m.dk !== 1 || !slides.length) return;
+  if (m.a) { annRecv(m, e.source); return; }
   if (MODE === 'embed' && Q.has('rest')) { goto(m.i, m.step); show(m.i, m.step); return; }
   sync(m.i, m.step);
 });
